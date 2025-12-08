@@ -19,6 +19,7 @@ from langchain_community.utilities import GoogleSerperAPIWrapper
 
 # Gradio
 import gradio as gr
+import os
 
 # Load environment variables
 load_dotenv(override=True)
