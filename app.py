@@ -123,5 +123,9 @@ def chat(user_input: str, history):
 # Launch Gradio interface
 if __name__ == "__main__":
     demo = gr.ChatInterface(chat)
-    demo.launch()
+    #local deployment - 
+    #demo.launch() 
+    #Render Deployment - 
+    port = int(os.getenv("PORT", 7860))
+    demo.launch(server_name="0.0.0.0", server_port=port
 
