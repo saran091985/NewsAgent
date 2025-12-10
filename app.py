@@ -31,7 +31,30 @@ serper = GoogleSerperAPIWrapper()
 tool_search = Tool(
     name="search",
     func=serper.run,
-    description="Useful for searching today's news and information online. Use targeted, specific queries that combine related topics when possible to minimize search calls. Examples: 'today's top space and science news', 'latest sports achievements today', 'today's technology innovations','today's happenings around the world and India'"
+    description=(
+        "Use this tool to look up today's news and information on the internet in a very cost-efficient way. "
+        "You must NEVER use more than 5 searches for one full news script. "
+        "Always combine related topics into a single search when you can.\n\n"
+        "For UAE news, prioritize these sources: https://gulfnews.com/ and https://www.khaleejtimes.com/\n"
+        "For India and world news, prioritize these sources: https://timesofindia.indiatimes.com/, https://www.ndtv.com/, and https://www.thehindu.com/\n\n"
+        "Your goal is to cover for TODAY:\n"
+        "1) Big world & India news (politics, sports, and major events),\n"
+        "2) Natural disasters and important weather alerts,\n"
+        "3) Innovations and technology (robots, education tech, new phones, new cars),\n"
+        "4) Space and sky news,\n"
+        "5) UAE news,\n"
+        "6) 'What is special about today' in history.\n\n"
+        "To save cost, use at most 5 combined searches like these examples:\n"
+        " - 'today major world and India politics and big events site:timesofindia.indiatimes.com OR site:ndtv.com OR site:thehindu.com'\n"
+        " - 'today world and India sports results and top players site:timesofindia.indiatimes.com OR site:ndtv.com'\n"
+        " - 'today natural disasters cyclones earthquakes weather alerts summary'\n"
+        " - 'today technology news robots education apps new phones new cars simple explanation'\n"
+        " - 'today space news rockets planets discoveries sky events AND (UAE news site:gulfnews.com OR site:khaleejtimes.com) AND this day in history'\n\n"
+        "After each search, pick only the most important stories. "
+        "Do NOT fire extra searches just to add small details. "
+        "If something is not clearly available in the results, explain it with what you already know from the main stories, "
+        "instead of running a new search."
+    )
 )
 
 tools = [tool_search]
