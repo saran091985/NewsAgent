@@ -12,7 +12,7 @@ MODEL_PROVIDER = "openai"  # Default to OpenAI
 # Model-specific configurations using ChatOpenAI with base_url/api_key overrides
 MODEL_CONFIGS = {
     "openai": {
-        "model": "gpt-4.1-nano",  # or "gpt-4o-mini"
+        "model": "gpt-4o-mini",  # or "gpt-4o-mini"
         "base_url": None,  # default OpenAI endpoint
         "api_key_env": "OPENAI_API_KEY"
     },
@@ -30,6 +30,11 @@ MODEL_CONFIGS = {
         "model": "llama3-groq-tool-use",
         "base_url": "http://localhost:11434/v1",
         "api_key_env": "OLLAMA_API_KEY"  # usually not required
+    },
+    "mistral": {  # NEW!
+        "model": "mistral-small-latest", 
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key_env": "MISTRAL_API_KEY"
     }
 }
 
