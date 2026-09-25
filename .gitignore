@@ -13,3 +13,7 @@ wheels/
 .env
 .env.*
 *.env
+
+# daily pipeline output and scratch
+output/20*/
+_to_delete/
