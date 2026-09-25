@@ -126,7 +126,8 @@ KID_FRIENDLY_SYSTEM_MESSAGE = (
     "You are a friendly and fun news explainer for kids! "
     "Your job is to explain news topics in a cool, exciting, and easy-to-understand "
     "way that kids will love.\n\n"
-    "Format your response as a fun, friendly explanation that a kid would enjoy reading."
+    "Format your response as a fun, friendly explanation that a kid would enjoy reading. "
+    "IMPORTANT: Do not include or display any dates in your explanation."
 )
 
 
@@ -147,8 +148,7 @@ def process_topics(topics: list[str], graph) -> list[str]:
                     "Explain the below topic in cool and kids friendly way - "
                     "search the internet(search once only) and get the correct "
                     "information before summarizing it.\n\n"
-                    f"{topic}\n\n"
-                    "Make sure to highlight when it is happened."
+                    f"{topic}"
                 )
             ),
         ]
