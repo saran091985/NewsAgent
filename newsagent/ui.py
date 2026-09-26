@@ -359,6 +359,61 @@ def on_write(folder, *values):
 
 
 # ---------------------------------------------------------------------------
+# past runs
+# ---------------------------------------------------------------------------
+
+FILE_NOTES = {
+    "youtube_script.md": "🎬 YouTube script", "news_detailed.md": "📚 detailed version",
+    "final.csv": "✅ your final list", "selected.csv": "✨ AI picks", "candidates.csv": "📥 all collected stories",
+}
+
+
+def _run_dates() -> list[str]:
+    root = config.OUTPUT_DIR
+    if not root.exists():
+        return []
+    return sorted((p.name for p in root.glob("20??-??-??") if p.is_dir()), reverse=True)
+
+
+def _zip_day(day: str) -> str | None:
+    """Zip one day's folder into a temp file (kept out of the output folder)."""
+    import shutil
+    import tempfile
+    src = config.OUTPUT_DIR / day
+    if not src.exists():
+        return None
+    base = Path(tempfile.mkdtemp(prefix="newsagent_")) / f"NewsAgent_{day}"
+    return shutil.make_archive(str(base), "zip", root_dir=src)
+
+
+def on_past_refresh(current=None):
+    dates = _run_dates()
+    value = current if current in dates else (dates[0] if dates else None)
+    return gr.Dropdown(choices=dates, value=value)
+
+
+def on_past_select(day):
+    if not day:
+        return "No saved days yet.", "", "", None, None
+    f = config.OUTPUT_DIR / day
+    script = (f / "youtube_script.md").read_text(encoding="utf-8") if (f / "youtube_script.md").exists() \
+        else "_No YouTube script was written on this day._"
+    detailed = (f / "news_detailed.md").read_text(encoding="utf-8") if (f / "news_detailed.md").exists() \
+        else "_No detailed version was written on this day._"
+    names = sorted(p.name for p in f.iterdir() if p.is_file())
+    lines = [f"### 📅 {day} — {len(names)} files"]
+    for n in names:
+        if n in FILE_NOTES:
+            lines.append(f"- **{n}** — {FILE_NOTES[n]}")
+    if (f / "write_log.json").exists():
+        log = json.loads((f / "write_log.json").read_text(encoding="utf-8"))
+        lines.append(f"\n{log.get('stories', '?')} stories · {log.get('script_words', '?')} words ≈ "
+                     f"{log.get('script_minutes', '?')} min · cost ≈ ${log.get('cost_usd', '?')}")
+    files = [str(f / n) for n in names if n.endswith((".md", ".csv"))]
+    return "\n".join(lines), script, detailed, files, _zip_day(day)
+
+
+# ---------------------------------------------------------------------------
 # layout
 # ---------------------------------------------------------------------------
 
@@ -415,9 +470,26 @@ def build() -> gr.Blocks:
                 detailed_md = gr.Markdown()
             with gr.Tab("⬇️ Downloads", id="downloads"):
                 files = gr.Files(label="Today's files")
+            with gr.Tab("📂 Past runs", id="past"):
+                with gr.Row():
+                    past_day = gr.Dropdown(choices=[], label="📅 Pick a day", scale=4)
+                    b_past_refresh = gr.Button("🔄 Refresh list", scale=1)
+                past_info = gr.Markdown()
+                with gr.Row():
+                    past_zip = gr.File(label="⬇️ Download the whole day (.zip)")
+                    past_files = gr.Files(label="Or download single files")
+                with gr.Tabs():
+                    with gr.Tab("🎬 YouTube script"):
+                        past_script = gr.Markdown()
+                    with gr.Tab("📚 Detailed version"):
+                        past_detailed = gr.Markdown()
 
         # wiring — buttons are greyed out while they work, the progress bar shows under them
         demo.load(on_load, [show_flagged, top_n], [folder, status, counter, *groups])
+        past_out = [past_info, past_script, past_detailed, past_files, past_zip]
+        demo.load(on_past_refresh, None, past_day).then(on_past_select, past_day, past_out)
+        b_past_refresh.click(on_past_refresh, past_day, past_day).then(on_past_select, past_day, past_out)
+        past_day.input(on_past_select, past_day, past_out)
         b_collect.click(_busy("⏳ Collecting news…"), None, b_collect) \
             .then(on_collect, [hours, show_flagged, top_n], [folder, status, counter, *groups]) \
             .then(_ready(L_COLLECT), None, b_collect)
@@ -434,7 +506,8 @@ def build() -> gr.Blocks:
         b_write.click(_busy("⏳ Writing scripts… please wait"), None, b_write) \
             .then(on_write, [folder, *groups], [script_md, detailed_md, notes, files, write_status, tabs],
                   show_progress="hidden") \
-            .then(_ready(L_WRITE), None, b_write)
+            .then(_ready(L_WRITE), None, b_write) \
+            .then(on_past_refresh, past_day, past_day)
     return demo
 
 
@@ -447,5 +520,6 @@ def main(port: int | None = None, host: str | None = None, share: bool = False):
     auth = (user, pw) if user and pw else None
     build().queue(default_concurrency_limit=1).launch(
         server_name=host, server_port=port, share=share, css=CSS, theme=THEME,
+        allowed_paths=[str(config.OUTPUT_DIR.resolve())],
         auth=auth, auth_message=f"{config.SHOW_NAME} — News Studio" if auth else None,
         inbrowser=host == "127.0.0.1")
