@@ -1,0 +1,131 @@
+
+"Welcome, awesome explorers, future scientists, and curious minds! I'm your host, and this is your ultimate global news roundup. We have some absolutely mind-blowing stories today from deep space, high-tech labs, and right here on Earth. Grab your thinking caps, because we are diving straight into the headlines!"
+
+---
+
+## 🌍 Category 1: World News
+
+"First up, let’s look at what’s happening across our big, beautiful planet. From giant puzzle pieces of peace to shaky ground and a virus-fighting superhero squad, here is your World News!"
+
+### 🤝 The Iran-US Conflict: The Big Peace Puzzle
+
+"Imagine a giant game of tug-of-war, but instead of pulling a rope, world leaders are talking about peace! Right now, there is a massive effort to fix a big disagreement between the United States and Iran."
+
+* **The Final Stages:** President Trump announced that peace talks are in their final, critical stages. It's like being just a few pieces away from finishing a massive jigsaw puzzle! 🧩
+* **The Warning:** There is a serious side, too. Iran’s Islamic Revolutionary Guard Corps warned that if anyone attacks them, a conflict could spread way beyond West Asia. 
+* **The Friendly Referee:** Because talking directly can be hard, Pakistan is stepping in to help! Pakistan’s Interior Minister, Mohsin Naqvi, flew to Tehran (the capital of Iran) twice in just one week to pass messages and help both sides find a way to play nice.
+
+### ♟️ A Diplomatic Chess Game in Cuba
+
+"Speaking of big countries dealing with past problems, the U.S. has just made a major move regarding its neighbor, Cuba!"
+
+* **The Indictment:** The U.S. has officially pressed charges against 94-year-old Raúl Castro, the former leader of Cuba. They allege he ordered the shooting down of two civilian rescue planes all the way back in 1996. 🛩️
+* **Keeping Calm:** President Trump stated he doesn’t expect this to cause a major military escalation. He's trying to keep things calm while using legal pressure to push for better changes in Cuba.
+
+### 🐼 Bilateral Besties: Xi Hosts Putin
+
+"Right after President Trump visited China, Beijing hosted another massive meeting!"
+
+* **The Summit:** Chinese President Xi Jinping welcomed Russian President Vladimir Putin.
+* **Teamwork:** The two leaders celebrated their strong friendship and discussed global security, showing the world how they plan to team up and work together on the global stage.
+
+### 🌋 Shaky Grounds in Peru
+
+"Moving over to South America, the Earth gave us a pretty big reminder that it is alive and moving!"
+
+* **The Rumble:** A powerful **5.8 magnitude** earthquake rattled the Pacific region of Peru.
+> **What is Magnitude?** It's the scale scientists use to measure how much energy an earthquake releases. A 5.8 means the ground shook hard enough to wobble buildings and cause some damage!
+
+
+* **The Good News:** While 27 people were unfortunately injured, absolutely no deaths were reported. Peru sits right on the **Andes Fault** (a giant crack in the Earth's crust where tectonic plates grind past each other), making it a prime spot for regular shake-ups!
+
+### 🍵 Raising a Cup for International Tea Day!
+
+"And finally, for some delicious news—put your pinkies up, because May 21st is officially **International Tea Day**!
+
+* **The Celebration:** People all over the world are raising a mug to celebrate tea. It isn't just a cozy drink; it’s a massive part of global culture and the environment.
+* **Supporting Farmers:** This day helps us learn how to support the hardworking farmers who grow and harvest tea leaves so we can enjoy everything from iced green tea to warm chamomile!
+
+---
+
+## 🇮🇳 Category 2: India News
+
+"Now, let’s hop on a jet and zoom over to India, where rockets are flying, friendships are growing, and school classrooms are getting a major superhero upgrade!"
+
+### 🇮🇹 A Special Friendship: India and Italy Team Up
+
+"Prime Minister Narendra Modi is back in New Delhi after a massive trip to Europe, and he brought back some fantastic news!"
+
+* **Special Strategic Partnership:** India and Italy have officially upgraded their relationship. 
+* **The Big Goals:** PM Modi and Italian Prime Minister Giorgia Meloni agreed to work super closely on trading goods, keeping each other safe, and sharing cool ideas in science and technology.
+
+### 🚀 The Suryastra Deep-Strike Rockets
+
+"Hold onto your seats, because Indian scientists have been testing some seriously powerful hardware!"
+
+* **The Inventors:** A private company in Pune called Nibe Limited just tested their brand-new **Suryastra** rockets at the Integrated Test Range.
+* **Incredible Distance:** These high-tech rockets can fly an amazing **150 to 300 kilometers**! That’s like launching a rocket from your house and having it land precisely at a theme park several cities away! This private sector breakthrough is a massive boost for keeping the country safe.
+
+
+### 🦸‍♀️ Girls in STEM: Program 'Manasvi'
+
+"Big brains alert! IIT Delhi just hosted a spectacular 5-day mentorship program called *Manasvi*."
+
+* **The Thinkers:** The name means 'one who thinks,' and it brought together 120 amazing girls from government schools in grades 9 to 12.
+* **Diving into STEM:** STEM stands for **Science, Technology, Engineering, and Math**. The girls got to hang out with expert mentors, do hands-on experiments, and learn how they can grow up to design the future or invent the next world-changing piece of technology!
+
+---
+
+## 💻 Category 3: Technology News
+
+"Speaking of technology, let's step into the digital world. Google just dropped some mind-blowing updates that make the future look like a sci-fi movie!"
+
+### 🤖 Google I/O 2026: Enter the Autonomous AI Agents
+
+"Google just held its massive developer event, and the big theme this year is letting robots do the heavy lifting!"
+
+* **Gemini Omni:** Google unveiled a magical new toolkit called Gemini Omni. It lets you create and edit videos just by talking to your computer like it's a friend. 🎥
+* **Autonomous Agents:** We are moving away from chatbots that just answer questions, and moving toward **fully autonomous AI agents**.
+> **What does Autonomous mean?** It means the AI can think, plan, and complete long, multi-step tasks all by itself without a human needing to guide it every single second. It’s like having a digital robot buddy handle your homework research or video editing while you sit back and relax!
+
+
+
+---
+
+## 🚀 Category 4: Space News
+
+"Look up, space cadets! Our final stop today is the stars. NASA and SpaceX are making massive moves to explore deep space and build cities on the Moon!"
+
+### 🌌 The Nancy Grace Roman Space Telescope
+
+"NASA is officially fast-tracking its next giant eye in the sky, aiming for a launch as early as September 2026!"
+
+* **Data Avalanche:** Once it's in space, this telescope is going to collect a mind-boggling **20,000 terabytes of data** over its 5-year mission. That is equal to packing a million high-definition movies into one satellite!
+* **Cosmic Mysteries:** The Roman Telescope will search for hidden exoplanets, map distant galaxies, and help scientists unlock the secrets of dark energy.
+
+### 🌞 Unlocking the Sun's Coronal Holes
+
+"Scientists have just used a brilliant new AI tool to map the mysterious dark patches on the Sun called **coronal holes**."
+
+* **Cosmic Fireworks:** Coronal holes are areas where the Sun’s magnetic field opens up, allowing fast-moving particles called **solar wind** to shoot out into space like celestial fireworks.
+* **3D Mapping:** Using images from the Solar Dynamics Observatory satellite, the new AI maps these holes in 3D. This helps scientists predict space weather before it hits Earth, protecting our satellites and giving us beautiful views of the Northern Lights!
+
+### 🌕 40 Priorities for a Moon City
+
+"NASA has officially locked in 40 technology priorities to build permanent infrastructure at the Moon's South Pole. They are literally designing a space station on the lunar surface!"
+
+> **What is a Space Station?** Think of a space station as a high-tech, sealed house and laboratory floating in space or sitting on another world. It provides air to breathe, power to run equipment, and a safe place for astronauts to live, eat, sleep, and do science experiments where humans normally couldn't survive!
+
+"To build this ultimate lunar base, NASA is focusing on points like:"
+
+* **Power Up! ⚡** Engineering special energy systems to keep the lights and heaters running through the freezing, two-week-long lunar nights.
+* **Robot Builders 🤖** Creating smart, autonomous robots that can dig, move heavy boulders, and assemble buildings without human steering.
+* **Using Moon Dirt 🏗️** Developing ways to mix lunar regolith (Moon dust) to create concrete so we can build structures right out of the ground instead of flying heavy bricks all the way from Earth.
+* **Dust Busters 🌌** Inventing static-shields to stop sharp, pesky Moon dust from clogging up spacesuits and machinery.
+* **Gateway to Mars 🔴** Everything we learn from building this Moon base will be used as a practice run to eventually send the very first humans to Mars!
+
+---
+
+
+"Wow! From peace talks on Earth to building robotic cities on the Moon, our world is moving fast, and the future looks absolutely bright. That’s all the news for today, explorers! Keep reading, stay curious, and I will see you next time. Bye-bye!"
+

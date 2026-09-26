@@ -2,10 +2,12 @@
 Step 3: write the two versions for the final story list.
 
 For each chosen story:
-  1. fetch the article's first paragraphs (free); fall back to the RSS summary
-  2. one gpt-4o-mini call returns a detailed version and a YouTube segment,
-     using ONLY facts from that text
-Then one more call writes the intro, "Today in history" and the outro.
+  1. fetch the article's first paragraphs (free); fall back to the RSS summary,
+     and for stories with little text, one news search (Serper) for more facts
+  2. one gpt-4o-mini call writes the story in the show's style (style/style_guide.md):
+     a playful title, bullet points with bold labels, and a "Wait, what's…?" explainer
+     — a longer version (detailed) and a shorter one (YouTube script)
+Then one more call writes the intro, the topic openers, "Special today" and the outro.
 
 Output (same folder):
   news_detailed.md   — for you: detailed version + source link per story
@@ -57,11 +59,30 @@ def fetch_article_text(url: str, max_chars: int = 2500) -> str:
     return meta.get("content", "") if meta else ""
 
 
+def search_snippets(headline: str) -> str:
+    """Today's news snippets about this headline (Serper, ~1 search). Used only when the article is thin."""
+    import os
+    if not config.SEARCH_THIN_STORIES or not os.getenv("SERPER_API_KEY"):
+        return ""
+    try:
+        from langchain_community.utilities import GoogleSerperAPIWrapper
+        res = GoogleSerperAPIWrapper(type="news", tbs="qdr:d", k=6).results(headline)
+    except Exception:
+        return ""
+    lines = [f"- {n.get('title', '')}: {n.get('snippet', '')} ({n.get('source', '')})"
+             for n in res.get("news", [])[:6]]
+    return "\n".join(lines)
+
+
 def source_text(story: dict) -> str:
     text = fetch_article_text(story.get("url", ""))
     summary = story.get("summary") or ""
     if len(text) < 200 and summary and summary not in text:
         text = (text + "\n" + summary).strip()
+    if len(text) < 400:
+        more = search_snippets(story["headline"])
+        if more:
+            text = (text + "\n\nOther reports today:\n" + more).strip()
     return text
 
 
@@ -69,49 +90,71 @@ def source_text(story: dict) -> str:
 # 2. Writing (AI)
 # ---------------------------------------------------------------------------
 
+class Point(BaseModel):
+    label: str = Field(description="2-4 word bold label that fits the story, e.g. 'The Battle', 'Why it matters'")
+    text: str = Field(description="1-2 short sentences")
+
+
 class StoryOut(BaseModel):
-    title: str = Field(description="short, catchy title for kids, max 8 words")
-    detailed: str = Field(description="detailed version for the show's editor")
-    script: str = Field(description="what the young host reads aloud for this story")
-    did_you_know: str = Field(description="one fun, true fact linked to the story, one sentence")
+    title: str = Field(description="playful, specific title in the show's style, max 9 words")
+    emoji: str = Field(description="one emoji that fits the story")
+    opener: str = Field(description="one lively lead-in sentence the host says before the points")
+    script_points: list[Point] = Field(description="2-3 points for the YouTube script")
+    detailed_points: list[Point] = Field(description="4-5 points for the detailed version: more facts, same style")
+    explain_term: str = Field(default="", description="the hardest word in the story, or empty")
+    explain_text: str = Field(default="", description="1-2 sentence kid explanation with an everyday comparison")
+
+
+class Opener(BaseModel):
+    topic: str
+    line: str
 
 
 class ShowOut(BaseModel):
-    intro: str
-    history: str = Field(description="'Today in history' segment")
+    intro: str = Field(description="fun greeting that teases 2-3 of today's biggest stories")
+    topic_openers: list[Opener] = Field(description="one lively line in quotes for each topic")
+    special_today: str = Field(default="", description="short 'special today' segment, or empty")
     outro: str
+
+
+def _style_guide() -> str:
+    try:
+        return Path(config.STYLE_GUIDE).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+SYSTEM = ("You write \"" + config.SHOW_NAME + "\", a daily YouTube news show for kids aged 8-14, presented by "
+          "a 10-year-old host. You are accurate first, fun second: every fact comes from the text you are given.")
 
 
 def _story_prompt(story: dict, text: str, script_words: int) -> str:
     lo, hi = config.DETAILED_WORDS
-    return f"""Headline: {story['headline']}
-Source: {story['source']}
-Topic: {story['bucket']}
+    return f"""{_style_guide()}
 
-Article text:
+---
+Write today's story in exactly that style.
+
+Topic: {story['bucket']}
+Headline: {story['headline']}
+Source: {story['source']}
+
+Facts you may use (article text and other reports):
 \"\"\"{text or '(no article text available — use only what the headline says)'}\"\"\"
 
-Write:
-1. detailed: {lo}-{hi} words, clear and neutral, for the show's editor. What happened, who, where, why it matters.
-2. script: about {script_words} words for a 10-year-old host to read aloud to kids aged 8-14.
-   Start with a hook line, use short sentences and simple words, explain any hard word,
-   end with why it matters or a question to the viewers. Friendly, not babyish.
-3. did_you_know: one fun related fact that is common knowledge (not about today's event).
-
-Rules: use ONLY facts from the article text or headline — never invent names, numbers or quotes.
-Do not mention dates or days of the week. At most one emoji in the script, none in detailed.
-If the story involves deaths or violence, say it gently and briefly without details."""
-
-
-SYSTEM = ("You write a daily news show for children, presented by a 10-year-old. "
-          "You are accurate first, fun second.")
+- script_points: the YouTube version, about {script_words} words in total (opener + points + explainer).
+- detailed_points: the longer version, {lo}-{hi} words in total, more facts and background, same kid style.
+- Explain the one hardest word in explain_term / explain_text (skip if nothing is hard).
+- Use ONLY facts from the text above. Never invent names, numbers, quotes or reasons.
+  If the text is thin, keep the story short rather than guessing.
+- Do not mention today's date or days of the week."""
 
 
 def _llm(schema):
     from dotenv import load_dotenv
     from langchain_openai import ChatOpenAI
     load_dotenv(override=True)
-    return ChatOpenAI(model=config.WRITE_MODEL, temperature=0.5).with_structured_output(
+    return ChatOpenAI(model=config.WRITE_MODEL, temperature=0.7).with_structured_output(
         schema, include_raw=True, method="function_calling")
 
 
@@ -122,7 +165,7 @@ def _usage(res) -> tuple[int, int]:
 
 def words_per_story(n: int) -> int:
     total = config.SCRIPT_MINUTES * config.WORDS_PER_MINUTE
-    return max(40, int((total - 280) / max(n, 1)))   # ~280 words for intro, history, outro
+    return max(40, min(110, int((total - 300) / max(n, 1))))   # ~300 words for intro, openers, special today, outro
 
 
 # ---------------------------------------------------------------------------
@@ -177,43 +220,57 @@ def run(folder: Path, stories: list[dict], progress=None) -> dict:
         if isinstance(res, Exception) or res.get("parsed") is None:
             err = str(res if isinstance(res, Exception) else res.get("parsing_error"))
             log["errors"][s["headline"]] = err
-            written.append({"title": s["headline"], "detailed": "[could not write this story]",
-                            "script": "", "did_you_know": "", "story": s})
+            written.append({"title": s["headline"], "emoji": "", "opener": "[could not write this story]",
+                            "script_points": [], "detailed_points": [], "explain_term": "", "explain_text": "",
+                            "story": s})
             continue
         tin, tout = _usage(res)
         log["input_tokens"] += tin
         log["output_tokens"] += tout
         out = res["parsed"].model_dump()
-        bad = unsupported_numbers(out["script"] + " " + out["detailed"], t, s["headline"])
+        body = " ".join(p["text"] for p in out["script_points"] + out["detailed_points"]) + " " + out["opener"]
+        bad = unsupported_numbers(body, t, s["headline"])
         if bad:
             log["number_warnings"][s["headline"]] = bad
         written.append({**out, "story": s})
 
-    say(0.8, "Writing intro, history and outro…")
+    say(0.8, "Writing intro, topic openers and outro…")
     history = []
     hist_file = folder / "on_this_day.json"
     if hist_file.exists():
         history = json.loads(hist_file.read_text(encoding="utf-8"))
+    topics = list(dict.fromkeys(w["story"]["bucket"] for w in written))
     host = f"The host's name is {config.HOST_NAME}. " if config.HOST_NAME else ""
-    show_prompt = f"""Show name: {config.SHOW_NAME}. {host}
+    special = ""
+    if config.INCLUDE_SPECIAL_TODAY:
+        special = ("\nToday's special days and 'on this day' events:\n"
+                   + ("\n".join(f"- {h.get('year') or 'Day'}: {h['text']}" for h in history) or "(none)")
+                   + "\nspecial_today: if one of these is fun for kids (an international day, a famous invention or"
+                     " discovery, a space milestone), write 40-70 words about it in the show's style. Ignore wars,"
+                     " disasters and religious feast days. If none fits, leave it empty.")
+    show_prompt = f"""{_style_guide()}
+
+---
+Show name: {config.SHOW_NAME}. {host}
 Today's stories: {'; '.join(w['title'] for w in written)}
+Topics in order: {', '.join(topics)}
+{special}
 
-On this day in history (pick the ONE event most interesting for kids, ignore wars and disasters):
-{chr(10).join(f"- {h['year']}: {h['text']}" for h in history) or '(none — skip history, write one line)'}
-
-Write for the 10-year-old host to read aloud:
-- intro: ~60 words, greet viewers, tease 2-3 of today's stories. No date.
-- history: ~80 words, "Today in history" about the chosen event, say the year.
-- outro: ~50 words, thank viewers, invite them to comment their favourite story, like and subscribe."""
+Write for the 10-year-old host to read aloud, in the style above:
+- intro: 40-70 words.
+- topic_openers: one lively line for each topic above (in that order).
+- outro: 25-45 words."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    empty = {"intro": "", "topic_openers": [], "special_today": "", "outro": ""}
     try:
         res = _llm(ShowOut).invoke([SystemMessage(content=SYSTEM), HumanMessage(content=show_prompt)])
         tin, tout = _usage(res)
         log["input_tokens"] += tin
         log["output_tokens"] += tout
-        show = res["parsed"].model_dump() if res.get("parsed") else {"intro": "", "history": "", "outro": ""}
+        show = res["parsed"].model_dump() if res.get("parsed") else empty
     except Exception as e:
         log["errors"]["intro/outro"] = str(e)
-        show = {"intro": "", "history": "", "outro": ""}
+        show = empty
 
     say(0.95, "Saving…")
     detailed_md, script_md, words = _render(written, show)
@@ -228,27 +285,60 @@ Write for the 10-year-old host to read aloud:
     return {"detailed": detailed_md, "script": script_md, "log": log}
 
 
+SECTION = {
+    "World": "🌍 WORLD NEWS", "India": "🇮🇳 INDIA NEWS", "UAE": "🇦🇪 UAE NEWS", "Sports": "🏆 SPORTS NEWS",
+    "Space & Science": "🚀 SPACE & SCIENCE NEWS", "Tech": "💻 TECHNOLOGY NEWS",
+    "Weather & Nature": "🌦️ WEATHER & NATURE", "Business": "💰 MONEY & BUSINESS",
+}
+
+
+def _story_md(k: int, w: dict, points_key: str, with_source: bool) -> list[str]:
+    s = w["story"]
+    out = [f"### {k}. {w['title']} {w.get('emoji', '')}".rstrip()]
+    if w.get("opener"):
+        out.append(w["opener"])
+    out.append("")
+    out += [f"- **{p['label'].rstrip(':')}:** {p['text']}" for p in w.get(points_key, [])]
+    if w.get("explain_term") and w.get("explain_text"):
+        term = w["explain_term"].strip().rstrip("?")
+        out += ["", f"> **Wait, what's {term}?** {w['explain_text']}"]
+    if with_source:
+        pub = (s.get("published") or "")[:16].replace("T", " ")
+        out += ["", f"<sub>Source: [{s['source']}]({s['url']}) · {pub} · original headline: {s['headline']}</sub>"]
+    out.append("")
+    return out
+
+
+def _words(lines: list[str]) -> int:
+    text = " ".join(l for l in lines if not l.startswith("<sub>") and not l.startswith("#"))
+    return len(re.sub(r"[*_>`\-]", " ", text).split())
+
+
 def _render(written: list[dict], show: dict) -> tuple[str, str, int]:
     today = datetime.now(config.LOCAL_TZ).strftime("%d %B %Y")
-    d = [f"# News — detailed version\n_{today} · {len(written)} stories_\n"]
-    sc = [f"# {config.SHOW_NAME} — YouTube script\n_{today}_\n", "## Intro", show["intro"], ""]
-    words = len(show["intro"].split())
-    current = None
-    for k, w in enumerate(written, 1):
-        s = w["story"]
-        pub = (s.get("published") or "")[:16].replace("T", " ")
-        d += [f"## {k}. {w['title']}", f"**{s['bucket']}** · {s['source']} · {pub}  ",
-              f"Original headline: _{s['headline']}_\n", w["detailed"], f"\nSource: {s['url']}\n"]
-        if s["bucket"] != current:
-            current = s["bucket"]
-            sc.append(f"## {current}")
-        sc += [f"### {k}. {w['title']}", w["script"]]
-        words += len(w["script"].split())
-        if w.get("did_you_know"):
-            sc.append(f"\n**Did you know?** {w['did_you_know']}")
-            words += len(w["did_you_know"].split())
-        sc.append("")
-    sc += ["## Today in history", show["history"], "", "## Outro", show["outro"]]
-    words += len(show["history"].split()) + len(show["outro"].split())
-    sc.insert(1, f"_About {words} words ≈ {words / config.WORDS_PER_MINUTE:.0f} minutes_\n")
+    openers = {o["topic"]: o["line"] for o in show.get("topic_openers", [])}
+
+    def build(points_key: str, with_source: bool) -> list[str]:
+        out = [show.get("intro", ""), ""] if show.get("intro") else []
+        current = None
+        for k, w in enumerate(written, 1):
+            b = w["story"]["bucket"]
+            if b != current:
+                current = b
+                out += ["---", f"## {SECTION.get(b, b)}"]
+                if openers.get(b):
+                    out += [f"_\"{openers[b].strip(chr(34))}\"_", ""]
+            out += _story_md(k, w, points_key, with_source)
+        if show.get("special_today"):
+            out += ["---", "## 🗓️ SPECIAL TODAY", show["special_today"], ""]
+        if show.get("outro"):
+            out += ["---", show["outro"]]
+        return out
+
+    body_sc = build("script_points", with_source=False)
+    words = _words(body_sc)
+    sc = [f"# {config.SHOW_NAME} — YouTube script", f"_{today} · about {words} words ≈ "
+          f"{words / config.WORDS_PER_MINUTE:.0f} minutes_", ""] + body_sc
+    d = [f"# {config.SHOW_NAME} — detailed news", f"_{today} · {len(written)} stories_", ""] \
+        + build("detailed_points", with_source=True)
     return "\n".join(d), "\n".join(sc), words

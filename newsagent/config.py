@@ -87,6 +87,7 @@ RSS_MAX_ITEMS_PER_FEED = 30
 
 # "Today in history" (free Wikipedia API)
 ON_THIS_DAY_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/{mm}/{dd}"
+HOLIDAYS_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/holidays/{mm}/{dd}"
 ON_THIS_DAY_MAX = 8
 
 # ---------------------------------------------------------------------------
@@ -157,8 +158,11 @@ EDITOR_REJECTS = [
 WRITE_MODEL = "gpt-4o-mini"      # one call per story + one for intro/outro (~$0.01 a day)
 SCRIPT_MINUTES = 12               # target video length; words per story are worked out from this
 WORDS_PER_MINUTE = 130            # a 10-year-old reading clearly
-DETAILED_WORDS = (120, 160)       # detailed version, per story
-SHOW_NAME = "Kids News Today"     # used in the intro/outro — change to your channel's name
+DETAILED_WORDS = (110, 170)       # detailed version, per story
+STYLE_GUIDE = "style/style_guide.md"   # tone rules + example stories the AI copies — edit freely
+INCLUDE_SPECIAL_TODAY = True      # "Special today" segment (international days, famous firsts)
+SEARCH_THIN_STORIES = True        # 1 Serper news search for stories whose article can't be read (~$0.001 each)
+SHOW_NAME = "The Learning Kids"   # used in the intro/outro — change to your channel's name
 HOST_NAME = ""                    # e.g. "Aarav"; leave empty to keep it generic
 
 # Keyword rules applied in order; first match wins. Checked against
