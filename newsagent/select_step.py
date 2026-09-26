@@ -1,8 +1,8 @@
 """
 Step 2: pick the TOP_N most important stories from today's candidates.
 
-gpt-4o-mini scores every headline 1-10, one topic at a time (8 small parallel
-calls, ~10k tokens in total, roughly $0.003). Code then takes the best-scored
+gpt-4o-mini scores every headline 1-10 in ONE call (SELECT_MODE = "single"),
+or one call per topic (SELECT_MODE = "per_topic"). Code then takes the best-scored
 stories per topic target, skipping near-duplicates. Run with --no-ai to use
 only the free rule-based ranking.
 
@@ -90,7 +90,7 @@ def rule_based_pick(rows: list[dict], n: int, already: list[str] | None = None) 
 class Score(BaseModel):
     n: int = Field(description="the story number exactly as given")
     score: int = Field(description="1-10, how right this story is for today's kids' show")
-    why: str = Field(description="max 10 words, the reason for the score")
+    why: str = Field(default="", description="max 8 words; only for scores 7-10, otherwise empty")
 
 
 class Scores(BaseModel):
@@ -175,6 +175,33 @@ def _bucket_prompt(bucket: str, items: list[tuple[int, dict]], target: int, cove
             f"Score EVERY headline below (number | source | headline):\n" + "\n".join(lines))
 
 
+def _all_examples() -> str:
+    picks, rejects = _feedback_examples()
+    out = ["Stories the editor PICKED on earlier days (for taste, not for today):"]
+    out += [f"- ({b}) {h}" for b, h in picks[-30:]] or ["- (none yet)"]
+    if rejects:
+        out += ["Stories the editor REJECTED on earlier days:"] + [f"- ({b}) {h}" for b, h in rejects[-20:]]
+    return "\n".join(out)
+
+
+def _single_prompt(number: dict[int, dict], targets: dict[str, int], cover: dict[str, int]) -> str:
+    parts = [f"Today's show needs {sum(targets.values())} stories: "
+             + ", ".join(f"{b} {t}" for b, t in targets.items()) + ".",
+             "", _all_examples(), "",
+             "Score EVERY headline below, grouped by topic (number | source | headline).",
+             "Give a short 'why' only for scores 7-10; leave it empty for the rest."]
+    for b in config.BUCKET_TARGETS:
+        items = [(k, r) for k, r in number.items() if r["bucket"] == b]
+        if not items:
+            continue
+        parts.append(f"\n## {b}")
+        for k, r in items:
+            c = cover.get(r["id"], 1)
+            tag = f" (covered {c} times)" if c > 1 else ""
+            parts.append(f"{k} | {r['source']}{tag} | {r['headline']}")
+    return "\n".join(parts)
+
+
 def ai_scores(rows: list[dict], n: int) -> tuple[dict[str, dict], dict]:
     """Return {story id: {"score": int, "why": str}} for every non-flagged story."""
     from dotenv import load_dotenv
@@ -188,13 +215,23 @@ def ai_scores(rows: list[dict], n: int) -> tuple[dict[str, dict], dict]:
     pool = [r for r in rows if not r["sensitive"]]
     number = {k: r for k, r in enumerate(pool, 1)}          # short numbers are far easier for the model than hex ids
     cover = coverage(pool)
-    buckets = [b for b in config.BUCKET_TARGETS if any(r["bucket"] == b for r in pool)]
-    prompts = []
-    for b in buckets:
-        items = [(k, r) for k, r in number.items() if r["bucket"] == b]
-        prompts.append([SystemMessage(content=SYSTEM),
-                        HumanMessage(content=_bucket_prompt(b, items, max(targets.get(b, 1), 1), cover))])
-    results = llm.batch(prompts, config={"max_concurrency": 8}, return_exceptions=True)
+    if config.SELECT_MODE == "per_topic":
+        # one call per topic, run in parallel (more calls, each sees fewer headlines)
+        buckets = [b for b in config.BUCKET_TARGETS if any(r["bucket"] == b for r in pool)]
+        prompts = []
+        for b in buckets:
+            items = [(k, r) for k, r in number.items() if r["bucket"] == b]
+            prompts.append([SystemMessage(content=SYSTEM),
+                            HumanMessage(content=_bucket_prompt(b, items, max(targets.get(b, 1), 1), cover))])
+        results = llm.batch(prompts, config={"max_concurrency": 8}, return_exceptions=True)
+    else:
+        # one call for all headlines (default)
+        buckets = [None]
+        prompts = [[SystemMessage(content=SYSTEM), HumanMessage(content=_single_prompt(number, targets, cover))]]
+        try:
+            results = [llm.invoke(prompts[0], config={"run_name": "Pick top N"})]
+        except Exception as e:
+            results = [e]
 
     failures = [r for r in results if isinstance(r, Exception)]
     if failures and len(failures) == len(results):
@@ -204,14 +241,14 @@ def ai_scores(rows: list[dict], n: int) -> tuple[dict[str, dict], dict]:
     errors = {}
     for b, res in zip(buckets, results):
         if isinstance(res, Exception) or res.get("parsed") is None:
-            errors[b] = str(res if isinstance(res, Exception) else res.get("parsing_error"))[:200]
+            errors[b or "all"] = str(res if isinstance(res, Exception) else res.get("parsing_error"))[:200]
             continue
         u = getattr(res["raw"], "usage_metadata", None) or {}
         tin += u.get("input_tokens", 0)
         tout += u.get("output_tokens", 0)
         for s in res["parsed"].scores:
             r = number.get(s.n)
-            if r is not None and r["bucket"] == b:           # ignore numbers from another topic
+            if r is not None and (b is None or r["bucket"] == b):   # per-topic: ignore numbers from another topic
                 scores[r["id"]] = {"score": max(1, min(10, s.score)), "why": s.why}
     log = {"model": config.SELECT_MODEL, "calls": len(prompts), "input_tokens": tin, "output_tokens": tout,
            "cost_usd": round((tin * PRICE_IN + tout * PRICE_OUT) / 1e6, 5),

@@ -108,9 +108,13 @@ BUCKET_TARGETS = {
     "Business": 1,
 }
 
-# Model that scores the headlines (8 small calls a day, ~$0.003 with gpt-4o-mini).
+# Model that scores the headlines (about $0.005-0.01 per pick with gpt-4o-mini).
 # A stronger model (e.g. "gpt-4.1-mini" or "gpt-4o") judges better for a few cents more.
 SELECT_MODEL = "gpt-4o-mini"
+
+# "single": one AI call scores all headlines (default, one trace in LangSmith).
+# "per_topic": one call per topic (8 calls in parallel) — each call sees fewer headlines.
+SELECT_MODE = "single"
 
 # Stories scoring below this (1-10) are only used if a topic has nothing better
 MIN_PICK_SCORE = 5
