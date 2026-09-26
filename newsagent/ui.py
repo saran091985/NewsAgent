@@ -185,6 +185,17 @@ def on_add(folder, headline, url, bucket, show_flagged, top_n, *values):
     return ["", "", _counter(top_n, values), *groups]
 
 
+def _save_feedback(folder: str, by_id: dict, ai_ids: set, my_ids: set) -> None:
+    """Remember what you kept, added and removed compared with the AI — the AI learns from it next time."""
+    def rows(ids):
+        return [{"bucket": by_id[i]["bucket"], "headline": by_id[i]["headline"]} for i in ids if i in by_id]
+    fb = {"saved_at": datetime.now().isoformat(timespec="seconds"),
+          "picked": rows(my_ids),                       # everything in your final list
+          "added": rows(my_ids - ai_ids),               # you ticked, the AI had not
+          "rejected": rows(ai_ids - my_ids)}            # the AI ticked, you removed
+    (Path(folder) / "feedback.json").write_text(json.dumps(fb, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _save_final(folder: str, ids: list[str]) -> list[dict]:
     rows, _ = _load(folder)
     by_id = {r["id"]: r for r in rows}
@@ -196,6 +207,9 @@ def _save_final(folder: str, ids: list[str]) -> list[dict]:
     for k, s in enumerate(stories, 1):
         s["rank"], s["why"] = k, old.get(s["id"], "picked by you")
     (Path(folder) / "final.json").write_text(json.dumps(stories, ensure_ascii=False, indent=2), encoding="utf-8")
+    log = Path(folder) / "select_log.json"
+    ai_made = log.exists() and json.loads(log.read_text()).get("from_ai", 0) > 0
+    _save_feedback(folder, by_id, set(old) if ai_made else set(ids), set(ids))
     with open(Path(folder) / "final.csv", "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=["rank", "bucket", "headline", "source", "url", "why"], extrasaction="ignore")
         w.writeheader()

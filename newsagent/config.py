@@ -115,21 +115,36 @@ SELECT_MODEL = "gpt-4o-mini"
 # Stories scoring below this (1-10) are only used if a topic has nothing better
 MIN_PICK_SCORE = 5
 
-# Headlines you picked yourself before — they show the AI your taste.
-# With LEARN_FROM_MY_PICKS, your final lists from the last 3 days on which you
-# wrote scripts are added automatically, so the AI keeps learning what you choose.
+# Your taste, shown to the AI as examples (topic, headline).
+# Every time you click "Save list" or "Write scripts", what you ticked and what
+# you un-ticked from the AI's picks is saved to output/<date>/feedback.json, and
+# the last FEEDBACK_DAYS days of that feedback are added to these examples
+# automatically — so the AI keeps learning from your corrections.
 LEARN_FROM_MY_PICKS = True
-EDITOR_EXAMPLES = [
-    "Iran chief negotiator says no deal with U.S. until Iranian rights secured",
-    "WHO hails five Ebola recoveries as new treatment centre opens in eastern Congo",
-    "Meteor explodes over U.S. with blast equivalent to 300 tonnes of TNT",
-    "Massive dust storm sweeps through Rajasthan",
-    "Perilous Laos cave rescue saves trapped miners",
-    "PSG wins back-to-back Champions League titles after shootout victory against Arsenal",
-    "India and U.S. launch bilateral trade and critical minerals talks",
-    "Blue Origin rocket explodes during test as SpaceX launch succeeds",
-    "China's Shenzhou-21 crew safely returns to Earth",
-    "A rare 'blue micromoon' lights up the night sky",
+FEEDBACK_DAYS = 7
+
+EDITOR_PICKS = [
+    ("World", "Iran chief negotiator says no deal with U.S. until Iranian rights secured"),
+    ("World", "Drone attack struck turbine building at Ukraine's Zaporizhzhia nuclear plant, IAEA says"),
+    ("World", "WHO hails five Ebola recoveries as new treatment centre opens in eastern Congo"),
+    ("World", "Perilous Laos cave rescue saves trapped miners"),
+    ("World", "U.S. looking to become huge source of India's energy needs: Senior State Department official"),
+    ("World", "Iran suggests deal to reopen Strait of Hormuz in seven days; Trump rejects proposal"),
+    ("World", "Saudi says it intercepted two drones launched by Houthis towards Riyadh"),
+    ("World", "Russia targeting 'ordinary life' with attacks on Ukraine's data centres, Zelensky says"),
+    ("India", "India and U.S. launch bilateral trade and critical minerals talks"),
+    ("Sports", "PSG wins back-to-back Champions League titles after shootout victory against Arsenal"),
+    ("Space & Science", "Meteor explodes over U.S. with blast equivalent to 300 tonnes of TNT"),
+    ("Space & Science", "Blue Origin rocket explodes during test as SpaceX launch succeeds"),
+    ("Space & Science", "China's Shenzhou-21 crew safely returns to Earth"),
+    ("Space & Science", "A rare 'blue micromoon' lights up the night sky"),
+    ("Tech", "EA FC 27 launches today with better gameplay, promising new mode"),
+    ("Weather & Nature", "Massive dust storm sweeps through Rajasthan"),
+]
+
+EDITOR_REJECTS = [
+    ("World", "Thousands turn out to greet Pope in France"),
+    ("World", "The treasured 'eternal snow' on this tropical island is about to disappear forever"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -149,7 +164,8 @@ BUCKET_KEYWORDS = [
                         r"orbit|moon|lunar|mars|planet|meteor|asteroid|comet|galaxy|telescope|"
                         r"eclipse|solar|shenzhou|gaganyaan|chandrayaan|scientist|discover|species|fossil)\b"
                         r"|/sci-tech/science/|/sci-tech/energy-and-environment/"),
-    ("Tech", r"\b(ai|artificial intelligence|robot|robotic|chip|semiconductor|smartphone|iphone|"
+    ("Tech", r"\b(video games?|gaming|gamers?|playstation|ps5|xbox|nintendo|switch 2|ea fc|minecraft|roblox|fortnite|"
+             r"gta|esports|ai|artificial intelligence|robot|robotic|chip|semiconductor|smartphone|iphone|"
              r"app|electric vehicle|ev|startup|google|apple|microsoft|openai|5g|6g)\b|/technology/"),
     ("Weather & Nature", r"\b(cyclones?|storms?|rains?|rainfall|monsoon|flood\w*|heatwaves?|heat wave|"
                          r"earthquakes?|quakes?|landslides?|wildfires?|tsunami|volcan\w*|imd|weather|dust storm|"

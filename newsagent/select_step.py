@@ -98,45 +98,80 @@ class Scores(BaseModel):
 
 
 SYSTEM = """You are the editor of a daily YouTube news show for children aged 8-14 in India and the UAE, \
-presented by a 10-year-old host. You score today's headlines for the show.
+presented by a 10-year-old host. The show explains the REAL big news of the day simply — it does not
+avoid serious world events. You score today's headlines for the show.
 
-Score 9-10: the big story of the day in its topic that families will talk about — a major world or India
-  event (leaders' summits, peace or trade deals, big decisions by governments), a natural disaster or
-  weather emergency, a space mission, launch or discovery, a big sports win, medal or record, an exciting
-  invention, a rescue, animals and nature.
-Score 6-8: solid, interesting and easy to explain to a child.
-Score 3-5: minor, local, very technical, or only interesting to adults.
-Score 1-2: never for this show — crime, court cases, scams, deaths of private people, political
-  name-calling or party fights (one leader attacking another), protests and detentions, speeches,
-  birthday tributes, religious events, adverts or sales, product reviews, shopping, fashion, property,
-  stock prices, company earnings, opinion or lifestyle pieces, live blogs, "explained" features.
+Score 9-10: the biggest stories of the day — the ones on every front page:
+  - major world events and turning points: wars and conflicts moving forward (big attacks, drone or
+    missile strikes, ceasefires, blockades like the Strait of Hormuz), peace or trade deals, summits,
+    big decisions by governments, anything that affects India's or the UAE's relations with the world
+  - natural disasters and weather emergencies
+  - space missions, launches, discoveries; big science findings
+  - big sports wins, medals, records
+  - exciting things kids care about: new video games, gadgets or tech launches, animals, rescues
+Score 6-8: clear, important news that is easy to explain.
+Score 3-5: soft or feel-good features (crowds, travel, "places disappearing"), minor or local news,
+  very technical news, or news only adults care about.
+Score 1-2: crime and court cases about individuals, scams, deaths of private people, gossip,
+  political name-calling or party fights (one politician attacking another), speeches with no decision,
+  birthday tributes, religious events, adverts and sales, property, stock prices, company earnings,
+  opinion or lifestyle pieces, live blogs, job ads.
 
-More outlets covering a story ("+N outlets") means it is bigger news.
-If two headlines are about the same event, give the clearer one the higher score and the other at most 3."""
-
-
-def _examples() -> str:
-    """Headlines the editor actually chose before (config + recent final lists)."""
-    picks = list(config.EDITOR_EXAMPLES)
-    # only lists you finished (scripts written), so half-reviewed lists don't teach the AI
-    done = [f for f in sorted(Path("output").glob("20??-??-??/final.json")) if (f.parent / "write_log.json").exists()]
-    for f in (done[-3:] if config.LEARN_FROM_MY_PICKS else []):
-        try:
-            picks += [r["headline"] for r in json.loads(f.read_text(encoding="utf-8"))]
-        except (OSError, ValueError, KeyError):
-            pass
-    picks = list(dict.fromkeys(picks))[-30:]
-    return "\n".join(f"- {h}" for h in picks)
+"covered N times" means N headlines today are about this same event — the higher N, the bigger the story.
+If several headlines are about the same event, give the clearest one the high score and the others at most 3.
+Learn from the editor's past choices: stories like the "picked" examples score high, like the "rejected" ones low."""
 
 
-def _bucket_prompt(bucket: str, items: list[tuple[int, dict]], target: int) -> str:
+def _feedback_examples() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """(topic, headline) the editor picked / rejected: config lists + recent feedback files."""
+    picks, rejects = list(config.EDITOR_PICKS), list(config.EDITOR_REJECTS)
+    if config.LEARN_FROM_MY_PICKS:
+        for f in sorted(Path("output").glob("20??-??-??/feedback.json"))[-config.FEEDBACK_DAYS:]:
+            try:
+                fb = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            picks += [(r["bucket"], r["headline"]) for r in fb.get("picked", [])]
+            rejects += [(r["bucket"], r["headline"]) for r in fb.get("rejected", [])]
+    return list(dict.fromkeys(picks)), list(dict.fromkeys(rejects))
+
+
+def _examples_for(bucket: str) -> str:
+    picks, rejects = _feedback_examples()
+    same = [h for b, h in picks if b == bucket][-15:]
+    other = [f"({b}) {h}" for b, h in picks if b != bucket][-8:]
+    rej = [h for b, h in rejects if b == bucket][-12:] + [f"({b}) {h}" for b, h in rejects if b != bucket][-4:]
+    out = ["Stories the editor PICKED on earlier days (for taste, not for today):"]
+    out += [f"- {h}" for h in same + other] or ["- (none yet)"]
+    if rej:
+        out += ["Stories the editor REJECTED on earlier days:"] + [f"- {h}" for h in rej]
+    return "\n".join(out)
+
+
+def coverage(rows: list[dict]) -> dict[str, int]:
+    """How many of today's headlines are about the same event (1 = only this one)."""
+    from .filter import _stems, same_event
+    count = {r["id"]: 1 + len([x for x in (r.get("also_in") or "").split(",") if x.strip()]) for r in rows}
+    stems = [_stems(r["headline"]) for r in rows]
+    for i, a in enumerate(rows):
+        for j in range(i + 1, len(rows)):
+            if not stems[i] & stems[j]:          # no shared word → cannot be the same event (fast skip)
+                continue
+            b = rows[j]
+            if same_event(a["headline"], b["headline"]):
+                count[a["id"]] += 1
+                count[b["id"]] += 1
+    return count
+
+
+def _bucket_prompt(bucket: str, items: list[tuple[int, dict]], target: int, cover: dict[str, int]) -> str:
     lines = []
     for num, r in items:
-        others = len([x for x in (r.get("also_in") or "").split(",") if x.strip()])
-        cover = f" (+{others} outlets)" if others else ""
-        lines.append(f"{num} | {r['source']}{cover} | {r['headline']}")
+        c = cover.get(r["id"], 1)
+        tag = f" (covered {c} times)" if c > 1 else ""
+        lines.append(f"{num} | {r['source']}{tag} | {r['headline']}")
     return (f"Topic: {bucket}. The show needs about {target} story(ies) from this topic today.\n\n"
-            f"Examples of stories this editor picked on earlier days (for taste, not for today):\n{_examples()}\n\n"
+            f"{_examples_for(bucket)}\n\n"
             f"Score EVERY headline below (number | source | headline):\n" + "\n".join(lines))
 
 
@@ -152,12 +187,13 @@ def ai_scores(rows: list[dict], n: int) -> tuple[dict[str, dict], dict]:
     targets = scaled_targets(n)
     pool = [r for r in rows if not r["sensitive"]]
     number = {k: r for k, r in enumerate(pool, 1)}          # short numbers are far easier for the model than hex ids
+    cover = coverage(pool)
     buckets = [b for b in config.BUCKET_TARGETS if any(r["bucket"] == b for r in pool)]
     prompts = []
     for b in buckets:
         items = [(k, r) for k, r in number.items() if r["bucket"] == b]
         prompts.append([SystemMessage(content=SYSTEM),
-                        HumanMessage(content=_bucket_prompt(b, items, max(targets.get(b, 1), 1)))])
+                        HumanMessage(content=_bucket_prompt(b, items, max(targets.get(b, 1), 1), cover))])
     results = llm.batch(prompts, config={"max_concurrency": 8}, return_exceptions=True)
 
     failures = [r for r in results if isinstance(r, Exception)]
