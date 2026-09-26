@@ -1,13 +1,14 @@
 """
 Step 2: pick the TOP_N most important stories from today's candidates.
 
-One gpt-4o-mini call reads the headlines (about 8k tokens, roughly $0.002)
-and returns the picks with a one-line reason each. Code then checks the
-answer (real ids, no repeats, right count) and tops it up without AI if needed.
-Run with --no-ai to use only the free rule-based ranking.
+gpt-4o-mini scores every headline 1-10, one topic at a time (8 small parallel
+calls, ~10k tokens in total, roughly $0.003). Code then takes the best-scored
+stories per topic target, skipping near-duplicates. Run with --no-ai to use
+only the free rule-based ranking.
 
 Output (same folder as candidates):
   selected.json / selected.csv — the picks, in show order
+  scores.json                  — AI score + reason for every story (shown on the review screen)
   select_log.json              — model, tokens, cost, how many came from AI vs fallback
 """
 
@@ -78,66 +79,140 @@ def rule_based_pick(rows: list[dict], n: int, already: list[str] | None = None) 
 
 
 # ---------------------------------------------------------------------------
-# AI pick
+# AI scoring
 # ---------------------------------------------------------------------------
+# Instead of asking for "the top 20" out of ~230 headlines in one go (the model
+# lost track of ids and ignored the topic mix), the AI now SCORES every headline
+# 1-10, one topic at a time (8 small calls run in parallel). Code then takes the
+# best-scored stories per topic, so the topic mix is always respected and each
+# score can be shown on the review screen.
 
-class Pick(BaseModel):
-    id: str = Field(description="the story id exactly as given")
-    why: str = Field(description="max 12 words: why this matters or will interest kids")
-
-
-class Picks(BaseModel):
-    picks: list[Pick] = Field(description="most important first")
-
-
-SYSTEM = """You are the editor of a daily YouTube news show for children, presented by a 10-year-old host \
-for viewers aged 8-14 in India and the UAE. From today's headlines, choose the most important stories.
-
-What makes a story important for this show:
-- big events many people are talking about today (reported by several outlets ranks higher)
-- things that change daily life, or that kids would find exciting: space, science, discoveries,
-  technology, sports wins and records, nature and weather, animals, inventions
-- major world and India events explained simply (summits, elections results, disasters, big decisions)
-- UAE news that families in the UAE would care about
-
-Avoid: crime, violence details, political name-calling or party fights, court cases, gossip,
-advertisements, lifestyle features, stock-price or company-earnings notes, opinion pieces,
-and the same event twice (pick the best headline for it).
-
-Follow the topic targets closely. If a topic has no good story, give the slot to another topic."""
+class Score(BaseModel):
+    n: int = Field(description="the story number exactly as given")
+    score: int = Field(description="1-10, how right this story is for today's kids' show")
+    why: str = Field(description="max 10 words, the reason for the score")
 
 
-def _prompt(rows: list[dict], n: int) -> str:
-    targets = ", ".join(f"{b} {t}" for b, t in scaled_targets(n).items())
+class Scores(BaseModel):
+    scores: list[Score]
+
+
+SYSTEM = """You are the editor of a daily YouTube news show for children aged 8-14 in India and the UAE, \
+presented by a 10-year-old host. You score today's headlines for the show.
+
+Score 9-10: the big story of the day in its topic that families will talk about — a major world or India
+  event (leaders' summits, peace or trade deals, big decisions by governments), a natural disaster or
+  weather emergency, a space mission, launch or discovery, a big sports win, medal or record, an exciting
+  invention, a rescue, animals and nature.
+Score 6-8: solid, interesting and easy to explain to a child.
+Score 3-5: minor, local, very technical, or only interesting to adults.
+Score 1-2: never for this show — crime, court cases, scams, deaths of private people, political
+  name-calling or party fights (one leader attacking another), protests and detentions, speeches,
+  birthday tributes, religious events, adverts or sales, product reviews, shopping, fashion, property,
+  stock prices, company earnings, opinion or lifestyle pieces, live blogs, "explained" features.
+
+More outlets covering a story ("+N outlets") means it is bigger news.
+If two headlines are about the same event, give the clearer one the higher score and the other at most 3."""
+
+
+def _examples() -> str:
+    """Headlines the editor actually chose before (config + recent final lists)."""
+    picks = list(config.EDITOR_EXAMPLES)
+    # only lists you finished (scripts written), so half-reviewed lists don't teach the AI
+    done = [f for f in sorted(Path("output").glob("20??-??-??/final.json")) if (f.parent / "write_log.json").exists()]
+    for f in (done[-3:] if config.LEARN_FROM_MY_PICKS else []):
+        try:
+            picks += [r["headline"] for r in json.loads(f.read_text(encoding="utf-8"))]
+        except (OSError, ValueError, KeyError):
+            pass
+    picks = list(dict.fromkeys(picks))[-30:]
+    return "\n".join(f"- {h}" for h in picks)
+
+
+def _bucket_prompt(bucket: str, items: list[tuple[int, dict]], target: int) -> str:
     lines = []
-    for r in rows:
-        if r["sensitive"]:
-            continue
+    for num, r in items:
         others = len([x for x in (r.get("also_in") or "").split(",") if x.strip()])
         cover = f" (+{others} outlets)" if others else ""
-        lines.append(f'{r["id"]} | {r["bucket"]} | {r["source"]}{cover} | {r["headline"]}')
-    return (f"Choose exactly {n} stories.\nTopic targets: {targets}.\n\n"
-            "Headlines (id | topic | source | headline):\n" + "\n".join(lines))
+        lines.append(f"{num} | {r['source']}{cover} | {r['headline']}")
+    return (f"Topic: {bucket}. The show needs about {target} story(ies) from this topic today.\n\n"
+            f"Examples of stories this editor picked on earlier days (for taste, not for today):\n{_examples()}\n\n"
+            f"Score EVERY headline below (number | source | headline):\n" + "\n".join(lines))
 
 
-def ai_pick(rows: list[dict], n: int) -> tuple[list[dict], dict]:
+def ai_scores(rows: list[dict], n: int) -> tuple[dict[str, dict], dict]:
+    """Return {story id: {"score": int, "why": str}} for every non-flagged story."""
     from dotenv import load_dotenv
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
 
     load_dotenv(override=True)
     llm = ChatOpenAI(model=config.SELECT_MODEL, temperature=0).with_structured_output(
-        Picks, include_raw=True, method="function_calling")
-    res = llm.invoke([SystemMessage(content=SYSTEM), HumanMessage(content=_prompt(rows, n))])
-    usage = getattr(res["raw"], "usage_metadata", None) or {}
-    tin, tout = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
-    log = {"model": config.SELECT_MODEL, "input_tokens": tin, "output_tokens": tout,
-           "cost_usd": round((tin * PRICE_IN + tout * PRICE_OUT) / 1e6, 5)}
-    parsed: Picks | None = res.get("parsed")
-    if parsed is None:
-        log["error"] = str(res.get("parsing_error"))
-        return [], log
-    return [p.model_dump() for p in parsed.picks], log
+        Scores, include_raw=True, method="function_calling")
+    targets = scaled_targets(n)
+    pool = [r for r in rows if not r["sensitive"]]
+    number = {k: r for k, r in enumerate(pool, 1)}          # short numbers are far easier for the model than hex ids
+    buckets = [b for b in config.BUCKET_TARGETS if any(r["bucket"] == b for r in pool)]
+    prompts = []
+    for b in buckets:
+        items = [(k, r) for k, r in number.items() if r["bucket"] == b]
+        prompts.append([SystemMessage(content=SYSTEM),
+                        HumanMessage(content=_bucket_prompt(b, items, max(targets.get(b, 1), 1)))])
+    results = llm.batch(prompts, config={"max_concurrency": 8}, return_exceptions=True)
+
+    failures = [r for r in results if isinstance(r, Exception)]
+    if failures and len(failures) == len(results):
+        raise failures[0]
+    scores: dict[str, dict] = {}
+    tin = tout = 0
+    errors = {}
+    for b, res in zip(buckets, results):
+        if isinstance(res, Exception) or res.get("parsed") is None:
+            errors[b] = str(res if isinstance(res, Exception) else res.get("parsing_error"))[:200]
+            continue
+        u = getattr(res["raw"], "usage_metadata", None) or {}
+        tin += u.get("input_tokens", 0)
+        tout += u.get("output_tokens", 0)
+        for s in res["parsed"].scores:
+            r = number.get(s.n)
+            if r is not None and r["bucket"] == b:           # ignore numbers from another topic
+                scores[r["id"]] = {"score": max(1, min(10, s.score)), "why": s.why}
+    log = {"model": config.SELECT_MODEL, "calls": len(prompts), "input_tokens": tin, "output_tokens": tout,
+           "cost_usd": round((tin * PRICE_IN + tout * PRICE_OUT) / 1e6, 5),
+           "scored": len(scores), "not_scored": len(pool) - len(scores)}
+    if errors:
+        log["errors"] = errors
+    return scores, log
+
+
+def pick_by_score(rows: list[dict], scores: dict[str, dict], n: int) -> list[str]:
+    """Best-scored stories per topic target; no near-duplicates; spare slots go to the best leftovers."""
+    from .filter import same_event
+    min_score = config.MIN_PICK_SCORE
+    ranked = sorted((r for r in rows if r["id"] in scores and scores[r["id"]]["score"] >= min_score),
+                    key=lambda r: (scores[r["id"]]["score"], _score(r)), reverse=True)
+    chosen: list[dict] = []
+
+    def ok(r):
+        return all(not same_event(r["headline"], c["headline"]) for c in chosen)
+
+    for b, target in scaled_targets(n).items():
+        for r in [r for r in ranked if r["bucket"] == b]:
+            if sum(c["bucket"] == b for c in chosen) >= target:
+                break
+            if ok(r):
+                chosen.append(r)
+    everything = sorted((r for r in rows if r["id"] in scores),
+                        key=lambda r: (scores[r["id"]]["score"], _score(r)), reverse=True)
+    targets = scaled_targets(n)
+    for cap in (1, n):                    # spare slots → best leftovers, at most 1 extra per topic first
+        for r in everything:
+            if len(chosen) >= n:
+                break
+            over = sum(c["bucket"] == r["bucket"] for c in chosen) - targets.get(r["bucket"], 0)
+            if r not in chosen and over < cap and ok(r):
+                chosen.append(r)
+    return [r["id"] for r in chosen[:n]]
 
 
 # ---------------------------------------------------------------------------
@@ -164,23 +239,22 @@ def run(n: int | None = None, folder: Path | None = None, use_ai: bool = True) -
     if use_ai:
         # If the AI fails, stop and say why — never swap in the rule-based pick silently.
         try:
-            picks, ai_log = ai_pick(rows, n)
+            scores, ai_log = ai_scores(rows, n)
         except Exception as e:
             raise AIError(friendly(e)) from e
         log.update(ai_log)
-        if not picks:
-            raise AIError(f"The AI answer could not be read ({ai_log.get('error', 'empty answer')[:200]}). "
-                          "Try again, or tick 'Free pick (no AI)'.")
-        for p in picks:
-            if p["id"] in by_id and p["id"] not in ids and len(ids) < n:
-                ids.append(p["id"])
-                why[p["id"]] = p["why"]
+        if not scores:
+            raise AIError("The AI answer could not be read. Try again, or tick 'Free pick (no AI)'.")
+        (folder / "scores.json").write_text(json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8")
+        ids = pick_by_score(rows, scores, n)
+        why = {i: f"{scores[i]['score']}/10 · {scores[i]['why']}" for i in ids}
     log["from_ai"] = len(ids)
-    ids = rule_based_pick(rows, n, already=ids)
+    if len(ids) < n:
+        ids = rule_based_pick(rows, n, already=ids)
     log["from_fallback"] = len(ids) - log["from_ai"]
 
     order = list(config.BUCKET_TARGETS)
-    ai_rank = {i: k for k, i in enumerate(ids)}
+    ai_rank = {i: k for k, i in enumerate(ids)}   # within a topic: highest score first
     selected = sorted((by_id[i] for i in ids),
                       key=lambda r: (order.index(r["bucket"]) if r["bucket"] in order else 99, ai_rank[r["id"]]))
     for k, r in enumerate(selected, 1):

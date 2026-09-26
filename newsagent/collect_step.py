@@ -49,6 +49,7 @@ def save(items: list[NewsItem], history: list[dict], stats: dict, folder: Path) 
         w.writerows(rows)
     (folder / "on_this_day.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     (folder / "collect_log.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
+    (folder / "scores.json").unlink(missing_ok=True)   # scores belong to the previous collection
 
 
 def run(now: datetime | None = None, hindu_json: str | None = None,

@@ -47,6 +47,11 @@ def _load(folder: str | None) -> tuple[list[dict], list[str]]:
         if (f / name).exists():
             chosen = [r["id"] for r in json.loads((f / name).read_text(encoding="utf-8"))]
             break
+    if (f / "scores.json").exists():          # AI score per story, shown and used for sorting
+        scores = json.loads((f / "scores.json").read_text(encoding="utf-8"))
+        for r in rows:
+            if r["id"] in scores:
+                r["score"], r["score_why"] = scores[r["id"]]["score"], scores[r["id"]]["why"]
     return rows, chosen
 
 
@@ -60,17 +65,19 @@ def _label(r: dict) -> str:
     more = len([x for x in (r.get("also_in") or "").split(",") if x.strip()])
     extra = f"  (+{more} outlets)" if more else ""
     flag = "⚠️ " if r.get("sensitive") else ""
-    return f"{flag}{t}{r['headline']} — {r['source']}{extra}"
+    score = f"[{r['score']}/10] " if r.get("score") else ""
+    return f"{flag}{score}{t}{r['headline']} — {r['source']}{extra}"
 
 
 def _groups(rows: list[dict], chosen: list[str], show_flagged: bool):
-    """One CheckboxGroup update per topic (chosen stories first, then newest) + the ticked values."""
+    """One CheckboxGroup update per topic + the ticked values."""
     out, values = [], []
     chosen_set = set(chosen)
     for b in BUCKETS:
         items = [r for r in rows if r["bucket"] == b and (show_flagged or not r["sensitive"] or r["id"] in chosen_set)]
-        items.sort(key=lambda r: (r["id"] not in chosen_set, -(datetime.fromisoformat(r["published"]).timestamp()
-                                                              if r.get("published") else 0)))
+        # ticked first, then highest AI score, then newest
+        items.sort(key=lambda r: (r["id"] not in chosen_set, -(r.get("score") or 0),
+                                  -(datetime.fromisoformat(r["published"]).timestamp() if r.get("published") else 0)))
         value = [r["id"] for r in items if r["id"] in chosen_set]
         values.append(value)
         out.append(gr.CheckboxGroup(choices=[(_label(r), r["id"]) for r in items], value=value,

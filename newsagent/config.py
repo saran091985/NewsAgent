@@ -108,8 +108,29 @@ BUCKET_TARGETS = {
     "Business": 1,
 }
 
-# Model used to pick the top stories (one call per day, ~8k tokens ≈ $0.002)
+# Model that scores the headlines (8 small calls a day, ~$0.003 with gpt-4o-mini).
+# A stronger model (e.g. "gpt-4.1-mini" or "gpt-4o") judges better for a few cents more.
 SELECT_MODEL = "gpt-4o-mini"
+
+# Stories scoring below this (1-10) are only used if a topic has nothing better
+MIN_PICK_SCORE = 5
+
+# Headlines you picked yourself before — they show the AI your taste.
+# With LEARN_FROM_MY_PICKS, your final lists from the last 3 days on which you
+# wrote scripts are added automatically, so the AI keeps learning what you choose.
+LEARN_FROM_MY_PICKS = True
+EDITOR_EXAMPLES = [
+    "Iran chief negotiator says no deal with U.S. until Iranian rights secured",
+    "WHO hails five Ebola recoveries as new treatment centre opens in eastern Congo",
+    "Meteor explodes over U.S. with blast equivalent to 300 tonnes of TNT",
+    "Massive dust storm sweeps through Rajasthan",
+    "Perilous Laos cave rescue saves trapped miners",
+    "PSG wins back-to-back Champions League titles after shootout victory against Arsenal",
+    "India and U.S. launch bilateral trade and critical minerals talks",
+    "Blue Origin rocket explodes during test as SpaceX launch succeeds",
+    "China's Shenzhou-21 crew safely returns to Earth",
+    "A rare 'blue micromoon' lights up the night sky",
+]
 
 # ---------------------------------------------------------------------------
 # Writing the scripts
@@ -130,14 +151,16 @@ BUCKET_KEYWORDS = [
                         r"|/sci-tech/science/|/sci-tech/energy-and-environment/"),
     ("Tech", r"\b(ai|artificial intelligence|robot|robotic|chip|semiconductor|smartphone|iphone|"
              r"app|electric vehicle|ev|startup|google|apple|microsoft|openai|5g|6g)\b|/technology/"),
-    ("Weather & Nature", r"\b(cyclone|storm|rain|monsoon|flood|heatwave|heat wave|earthquake|quake|"
-                         r"landslide|wildfire|tsunami|volcano|imd|weather|dust storm|tiger|elephant|wildlife|"
-                         r"hurricane|typhoon|temperature|humidity|fog|climate)\b"),
+    ("Weather & Nature", r"\b(cyclones?|storms?|rains?|rainfall|monsoon|flood\w*|heatwaves?|heat wave|"
+                         r"earthquakes?|quakes?|landslides?|wildfires?|tsunami|volcan\w*|imd|weather|dust storm|"
+                         r"tigers?|elephants?|wildlife|hurricanes?|typhoons?|temperatures?|humidity|fog|climate|"
+                         r"red alert|orange alert|yellow alert)\b"),
     ("Sports", r"\b(cricket|ipl|football|fifa|tennis|hockey|olympic|chess|champions league|"
                r"world cup|medal|tournament|match|final|psg|kabaddi|athletics|grand prix|f1|asian games|"
                r"coach|swim|swimmer|world record|wicket|badminton|olympiad|triathlon|marathon|"
                r"singapore open|french open|us open|wimbledon|gulf cup|premier league|la liga)\b|/sport/"),
-    ("UAE", r"\b(uae|dubai|abu dhabi|sharjah|emirates|emirati|ajman|ras al khaimah|fujairah)\b"),
+    ("UAE", r"\b(uae|dubai|abu dhabi|sharjah|emirates|emirati|ajman|ras al khaimah|fujairah|umm al quwain|"
+            r"global village|burj|expo city|rta|dirham|dh\d|al ain|mohammed bin rashid|mohamed bin zayed)\b"),
     ("World", r"\b(u\.?s\.?|america|trump|china|chinese|japan|russia|ukraine|iran|israel|gaza|lebanon|"
               r"pakistan|nepal|sri lanka|bangladesh|u\.?k\.?|britain|france|paris|germany|europe|"
               r"africa|congo|laos|vietnam|philippines|korea|venezuela|brazil|canada|australia|"
@@ -160,6 +183,13 @@ SENSITIVE_PATTERN = (
 
 # Headlines shorter than this are section pages or ads, not stories
 MIN_HEADLINE_WORDS = 5
+
+# Dropped from every source: stock-market chatter, adverts, section pages
+NOISE_PATTERN = (
+    r"\b(share price|shares? (rise|fall|jump|slump)|stock (price|market)|strong buy|outperform|price target|"
+    r"target price|dow jones|nasdaq|futures|ipo|sensex|nifty|analysts? (say|rate)|% off|deal of the day|"
+    r"prime day|discount|sale ends|coupon|best broker|sponsored|top stories$|latest .* news)\b"
+)
 
 # Near-duplicate threshold (0–1) for titles from different sources
 DEDUPE_SIMILARITY = 0.82

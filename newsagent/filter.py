@@ -22,6 +22,7 @@ _WATCH = re.compile(r"^\s*watch\s*[:|\-–]\s*", re.I)
 _SKIP = [re.compile(p, re.I) for p in config.HINDU_SKIP_TITLE_PATTERNS]
 _SKIP_URL = [re.compile(p, re.I) for p in config.HINDU_SKIP_URL_PATTERNS]
 _SENSITIVE = re.compile(config.SENSITIVE_PATTERN, re.I)
+_NOISE = re.compile(config.NOISE_PATTERN, re.I)
 _BUCKETS = [(name, re.compile(rx, re.I)) for name, rx in config.BUCKET_KEYWORDS]
 _UAE = dict(_BUCKETS)["UAE"]
 _KEEP = {c.lower() for c in config.HINDU_KEEP_CATEGORIES}
@@ -51,6 +52,24 @@ def _similar(a: str, b: str) -> bool:
     if len(ta) >= 4 and len(tb) >= 4:
         return len(ta & tb) / min(len(ta), len(tb)) >= 0.8
     return False
+
+
+_GENERIC = {"asian", "games", "2026", "2027", "india", "indian", "world", "says", "today", "live", "updates",
+            "update", "news", "first", "after", "over", "their", "with", "from", "amid", "year", "years", "govt",
+            "government", "minister", "president", "state", "states", "national", "global", "official", "report"}
+
+
+def _stems(title: str) -> set[str]:
+    return {w[:5] for w in _norm(title).split() if w not in _STOP and w not in _GENERIC and len(w) > 3}
+
+
+def same_event(a: str, b: str) -> bool:
+    """Looser check used when picking: do two headlines describe the same event?"""
+    if _similar(a, b):
+        return True
+    sa, sb = _stems(a), _stems(b)
+    shared = len(sa & sb)
+    return shared >= 3 or (shared >= 2 and shared / max(1, min(len(sa), len(sb))) >= 0.5)
 
 
 def assign_bucket(item: NewsItem) -> str:
@@ -98,6 +117,8 @@ def run(items: list[NewsItem], since: datetime, until: datetime) -> tuple[list[N
                 continue
         i.headline = clean_headline(i.headline)
         if len(i.headline.split()) < config.MIN_HEADLINE_WORDS:   # "Travel", "Latest Europe News"
+            continue
+        if _NOISE.search(i.headline):                               # stock chatter, adverts
             continue
         kept.append(i)
     items = kept
