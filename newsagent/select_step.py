@@ -126,7 +126,7 @@ def _feedback_examples() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """(topic, headline) the editor picked / rejected: config lists + recent feedback files."""
     picks, rejects = list(config.EDITOR_PICKS), list(config.EDITOR_REJECTS)
     if config.LEARN_FROM_MY_PICKS:
-        for f in sorted(Path("output").glob("20??-??-??/feedback.json"))[-config.FEEDBACK_DAYS:]:
+        for f in sorted(config.OUTPUT_DIR.glob("20??-??-??/feedback.json"))[-config.FEEDBACK_DAYS:]:
             try:
                 fb = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -293,7 +293,7 @@ def pick_by_score(rows: list[dict], scores: dict[str, dict], n: int) -> list[str
 # ---------------------------------------------------------------------------
 
 def latest_run_dir() -> Path:
-    dirs = sorted(p for p in Path("output").glob("20??-??-??") if (p / "candidates.json").exists())
+    dirs = sorted(p for p in config.OUTPUT_DIR.glob("20??-??-??") if (p / "candidates.json").exists())
     if not dirs:
         raise SystemExit("No candidates found — run `python -m newsagent collect` first.")
     return dirs[-1]

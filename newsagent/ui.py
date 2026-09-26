@@ -24,12 +24,86 @@ from .ai_errors import AIError
 
 BUCKETS = list(config.BUCKET_TARGETS)
 
+TOPIC_COLORS = {
+    "World": "#3b82f6", "India": "#f97316", "UAE": "#16a34a", "Sports": "#ef4444",
+    "Space & Science": "#8b5cf6", "Tech": "#06b6d4", "Weather & Nature": "#14b8a6", "Business": "#eab308",
+}
+TOPIC_ICONS = {
+    "World": "🌍", "India": "🇮🇳", "UAE": "🇦🇪", "Sports": "🏆", "Space & Science": "🚀",
+    "Tech": "💻", "Weather & Nature": "🌦️", "Business": "💰",
+}
+
+
+def _slug(b: str) -> str:
+    return "".join(ch for ch in b.lower() if ch.isalnum())
+
+
 CSS = """
-.bucket-box .wrap {flex-direction: column; align-items: flex-start; gap: 4px;}
-.bucket-box label {font-size: 0.93rem;}
-#counter {position: sticky; top: 0; z-index: 10; background: var(--background-fill-primary);
-          padding: 6px 0; border-bottom: 1px solid var(--border-color-primary);}
+.gradio-container {max-width: 1280px !important; width: 100% !important; margin: auto;}
+body, .gradio-container {background: linear-gradient(180deg, #fdf4ff 0%, #eff6ff 40%, #f0fdfa 100%) !important;}
+.dark body, .dark .gradio-container {background: #0f172a !important;}
+
+/* header banner */
+#hero {border-radius: 22px; padding: 22px 28px; color: #fff; margin-bottom: 6px;
+       background: linear-gradient(120deg, #7c3aed 0%, #db2777 45%, #f59e0b 100%);
+       box-shadow: 0 10px 30px rgba(124,58,237,.25);}
+#hero h1 {margin: 0; font-size: 2rem; color: #fff;}
+#hero p {margin: 6px 0 0; opacity: .95; font-size: 1.02rem;}
+#hero .steps span {display: inline-block; background: rgba(255,255,255,.22); border-radius: 999px;
+                   padding: 3px 12px; margin: 10px 6px 0 0; font-weight: 600; font-size: .9rem;}
+
+/* panels */
+#controls {border-radius: 18px; background: rgba(255,255,255,.75); padding: 8px; box-shadow: 0 4px 18px rgba(0,0,0,.05);}
+.dark #controls {background: rgba(30,41,59,.7);}
+
+/* step buttons */
+.step-btn button, button.step-btn {border: none !important; color: #fff !important; font-weight: 700 !important;
+      font-size: 1.05rem !important; border-radius: 14px !important; min-height: 52px;
+      box-shadow: 0 6px 16px rgba(0,0,0,.12); transition: transform .08s ease;}
+.step-btn:hover {transform: translateY(-1px);}
+#btn-collect {background: linear-gradient(90deg, #0ea5e9, #6366f1) !important;}
+#btn-pick {background: linear-gradient(90deg, #a855f7, #ec4899) !important;}
+#btn-write {background: linear-gradient(90deg, #f97316, #ef4444) !important;}
+#btn-save {background: linear-gradient(90deg, #10b981, #14b8a6) !important;}
+#btn-add {background: linear-gradient(90deg, #64748b, #334155) !important;}
+button:disabled {filter: grayscale(.4); opacity: .8; cursor: progress !important;}
+
+/* status + counter */
+#status {border-radius: 14px; padding: 4px 14px; background: rgba(255,255,255,.7);}
+.dark #status {background: rgba(30,41,59,.7);}
+#counter {position: sticky; top: 0; z-index: 10; padding: 8px 12px; border-radius: 14px;
+          background: rgba(255,255,255,.92); box-shadow: 0 4px 14px rgba(0,0,0,.06);}
+.dark #counter {background: rgba(15,23,42,.92);}
+#write-status {min-height: 8px;}
+.pwrap {margin: 6px 0 4px;}
+.ptext {font-weight: 700; margin-bottom: 6px;}
+.pbar {height: 16px; border-radius: 999px; background: rgba(148,163,184,.25); overflow: hidden;}
+.pfill {height: 100%; border-radius: 999px; transition: width .4s ease;}
+
+/* topic cards */
+.topic {border-radius: 16px !important; border: none !important; overflow: hidden;
+        border-left: 8px solid var(--tc) !important; box-shadow: 0 4px 14px rgba(0,0,0,.06);
+        background: linear-gradient(90deg, color-mix(in srgb, var(--tc) 10%, transparent), transparent 60%) !important;}
+.topic > button, .topic .label-wrap {font-weight: 800 !important; font-size: 1.1rem !important; color: var(--tc) !important;}
+.bucket-box .wrap {flex-direction: column; align-items: flex-start; gap: 5px;}
+.bucket-box label {font-size: 0.95rem; border-radius: 12px !important; transition: background .1s;}
+.bucket-box label:hover {background: color-mix(in srgb, var(--tc) 12%, transparent) !important;}
+.bucket-box label.selected {background: var(--tc) !important; color: #fff !important; border-color: var(--tc) !important;}
+.bucket-box label.selected span {color: #fff !important;}
+""" + "\n".join(f".topic-{_slug(b)} {{--tc: {c};}}" for b, c in TOPIC_COLORS.items())
+
+HERO = f"""
+<div id="hero">
+  <h1>📰 {config.SHOW_NAME} — News Studio</h1>
+  <p>Today's real news, picked and written for kids aged 8–14.</p>
+  <div class="steps"><span>1 · Collect</span><span>2 · Pick</span><span>3 · Review</span><span>4 · Write</span></div>
+</div>
 """
+
+THEME = gr.themes.Soft(
+    primary_hue="violet", secondary_hue="pink", neutral_hue="slate",
+    radius_size="lg", font=[gr.themes.GoogleFont("Nunito"), "ui-sans-serif", "sans-serif"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +165,7 @@ def _counter(top_n: int, values: list[list[str]]) -> str:
     for b, v in zip(BUCKETS, values):
         n, t = len(v or []), targets.get(b, 0)
         mark = "✅" if n == t else ("🔺" if n > t else "▫️")
-        parts.append(f"{mark} {b} **{n}/{t}**")
+        parts.append(f"{mark} {TOPIC_ICONS.get(b, '')} {b} **{n}/{t}**")
     total = sum(len(v or []) for v in values)
     head = f"### Picked {total} of {int(top_n)}"
     return head + "\n" + " · ".join(parts)
@@ -226,19 +300,48 @@ def on_save(folder, *values):
     return str(Path(folder) / "final.csv")
 
 
-def on_write(folder, *values, progress=gr.Progress()):
+def _bar(frac: float, text: str, color: str = "linear-gradient(90deg,#f97316,#ec4899,#8b5cf6)") -> str:
+    pct = max(3, min(100, int(frac * 100)))
+    return (f'<div class="pwrap"><div class="ptext">{text} <b>{pct}%</b></div>'
+            f'<div class="pbar"><div class="pfill" style="width:{pct}%;background:{color}"></div></div></div>')
+
+
+def on_write(folder, *values):
+    """Generator: shows a live progress bar under the button while the scripts are written."""
+    import threading
+    import time
+    skip = gr.skip()
     if not folder:
         raise gr.Error("Collect the news first.")
     ids = [i for v in values for i in (v or [])]
     if not ids:
         raise gr.Error("Tick at least one story.")
     stories = _save_final(folder, ids)
-    try:
-        res = write_step.run(Path(folder), stories, progress=progress)
-    except AIError as e:
-        msg = f"{e} Your list was saved to final.csv."
+
+    state = {"frac": 0.0, "desc": "Starting…", "res": None, "err": None}
+
+    def progress(frac, desc=""):
+        state["frac"], state["desc"] = frac, desc
+
+    def work():
+        try:
+            state["res"] = write_step.run(Path(folder), stories, progress=progress)
+        except Exception as e:      # AIError or anything unexpected
+            state["err"] = e
+
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    while t.is_alive():
+        yield skip, skip, skip, skip, _bar(state["frac"], f"✍️ {state['desc']}"), skip
+        time.sleep(0.5)
+
+    if state["err"] is not None:
+        msg = f"{state['err']} Your list was saved to final.csv."
         gr.Warning(msg, duration=None, title="Writing failed")
-        return gr.skip(), gr.skip(), f"❌ **Writing failed:** {msg}", gr.skip()
+        yield skip, skip, f"❌ **Writing failed:** {msg}", skip, \
+            _bar(1, f"❌ Writing failed — {msg}", "#ef4444"), skip
+        return
+    res = state["res"]
     log = res["log"]
     notes = [f"**{log['script_words']} words ≈ {log['script_minutes']} minutes** · cost ≈ ${log['cost_usd']}"]
     if log["errors"]:
@@ -250,35 +353,48 @@ def on_write(folder, *values, progress=gr.Progress()):
         notes.append(f"ℹ️ {len(log['thin_source'])} stories had little article text (written from headline/summary) — double-check them.")
     f = Path(folder)
     files = [str(f / "youtube_script.md"), str(f / "news_detailed.md"), str(f / "final.csv")]
-    return res["script"], res["detailed"], "\n\n".join(notes), files
+    done = _bar(1, f"✅ Done! {log['script_words']} words ≈ {log['script_minutes']} minutes — see the 🎬 YouTube script tab.",
+                "linear-gradient(90deg,#10b981,#14b8a6)")
+    yield res["script"], res["detailed"], "\n\n".join(notes), files, done, gr.Tabs(selected="script")
 
 
 # ---------------------------------------------------------------------------
 # layout
 # ---------------------------------------------------------------------------
 
-def build() -> gr.Blocks:
-    with gr.Blocks(title="NewsAgent — Kids News") as demo:
-        folder = gr.State(None)
-        gr.Markdown("# 📰 NewsAgent — today's news for the kids' show")
+def _busy(label: str):
+    return lambda: gr.Button(value=label, interactive=False)
 
-        with gr.Row():
-            top_n = gr.Slider(5, 40, value=config.TOP_N, step=1, label="How many stories (top N)")
-            hours = gr.Slider(6, 48, value=config.WINDOW_HOURS, step=1, label="News from the last … hours")
-            with gr.Column(min_width=160):
+
+def _ready(label: str):
+    return lambda: gr.Button(value=label, interactive=True)
+
+
+def build() -> gr.Blocks:
+    L_COLLECT, L_PICK = "1 · 📥 Collect today's news", "2 · ✨ Pick top N with AI"
+    L_WRITE, L_SAVE = "4 · ✍️ Write scripts for the ticked stories", "💾 Save list only"
+    with gr.Blocks(title=f"{config.SHOW_NAME} — News Studio") as demo:
+        folder = gr.State(None)
+        gr.HTML(HERO)
+
+        with gr.Row(elem_id="controls"):
+            top_n = gr.Slider(5, 40, value=config.TOP_N, step=1, label="🔢 How many stories (top N)")
+            hours = gr.Slider(6, 48, value=config.WINDOW_HOURS, step=1, label="⏱️ News from the last … hours")
+            with gr.Column(min_width=180):
                 no_ai = gr.Checkbox(False, label="Free pick (no AI)")
                 show_flagged = gr.Checkbox(False, label="Show ⚠️ flagged stories")
         with gr.Row():
-            b_collect = gr.Button("1. Collect today's news", variant="secondary")
-            b_pick = gr.Button("2. Pick top N with AI", variant="secondary")
-        status = gr.Markdown()
+            b_collect = gr.Button(L_COLLECT, elem_id="btn-collect", elem_classes="step-btn")
+            b_pick = gr.Button(L_PICK, elem_id="btn-pick", elem_classes="step-btn")
+        status = gr.Markdown(elem_id="status")
 
-        with gr.Tabs():
-            with gr.Tab("3. Review stories"):
+        with gr.Tabs() as tabs:
+            with gr.Tab("3 · 📝 Review stories", id="review"):
                 counter = gr.Markdown(elem_id="counter")
                 groups = []
                 for b in BUCKETS:
-                    with gr.Accordion(b, open=True):
+                    with gr.Accordion(f"{TOPIC_ICONS.get(b, '')} {b}", open=True,
+                                      elem_classes=["topic", f"topic-{_slug(b)}"]):
                         groups.append(gr.CheckboxGroup(choices=[], label=b, show_label=False,
                                                        elem_classes="bucket-box"))
                 with gr.Accordion("➕ Add a story you found elsewhere", open=False):
@@ -286,34 +402,50 @@ def build() -> gr.Blocks:
                         add_head = gr.Textbox(label="Headline", scale=3)
                         add_url = gr.Textbox(label="Link", scale=3)
                         add_bucket = gr.Dropdown(BUCKETS, value="Space & Science", label="Topic", scale=1)
-                    b_add = gr.Button("Add and tick it")
+                    b_add = gr.Button("➕ Add and tick it", elem_id="btn-add", elem_classes="step-btn")
                 with gr.Row():
-                    b_save = gr.Button("💾 Save list only")
-                    b_write = gr.Button("4. ✍️ Write scripts for the ticked stories", variant="primary")
+                    b_save = gr.Button(L_SAVE, elem_id="btn-save", elem_classes="step-btn")
+                    b_write = gr.Button(L_WRITE, elem_id="btn-write", elem_classes="step-btn")
+                write_status = gr.HTML(elem_id="write-status")   # live progress bar shows here
                 saved_file = gr.File(label="final.csv", visible=True)
-            with gr.Tab("YouTube script"):
+            with gr.Tab("🎬 YouTube script", id="script"):
                 notes = gr.Markdown()
                 script_md = gr.Markdown()
-            with gr.Tab("Detailed version"):
+            with gr.Tab("📚 Detailed version", id="detailed"):
                 detailed_md = gr.Markdown()
-            with gr.Tab("Downloads"):
+            with gr.Tab("⬇️ Downloads", id="downloads"):
                 files = gr.Files(label="Today's files")
 
-        # wiring
+        # wiring — buttons are greyed out while they work, the progress bar shows under them
         demo.load(on_load, [show_flagged, top_n], [folder, status, counter, *groups])
-        b_collect.click(on_collect, [hours, show_flagged, top_n], [folder, status, counter, *groups])
-        b_pick.click(on_pick, [folder, top_n, no_ai, show_flagged], [status, counter, *groups])
+        b_collect.click(_busy("⏳ Collecting news…"), None, b_collect) \
+            .then(on_collect, [hours, show_flagged, top_n], [folder, status, counter, *groups]) \
+            .then(_ready(L_COLLECT), None, b_collect)
+        b_pick.click(_busy("⏳ Picking the top stories…"), None, b_pick) \
+            .then(on_pick, [folder, top_n, no_ai, show_flagged], [status, counter, *groups]) \
+            .then(_ready(L_PICK), None, b_pick)
         show_flagged.change(on_toggle_flagged, [folder, show_flagged, top_n, *groups], [counter, *groups])
         for g in groups:
-            g.change(lambda n, *v: _counter(n, list(v)), [top_n, *groups], counter)
-        top_n.change(lambda n, *v: _counter(n, list(v)), [top_n, *groups], counter)
+            g.change(lambda n, *v: _counter(n, list(v)), [top_n, *groups], counter, show_progress="hidden")
+        top_n.change(lambda n, *v: _counter(n, list(v)), [top_n, *groups], counter, show_progress="hidden")
         b_add.click(on_add, [folder, add_head, add_url, add_bucket, show_flagged, top_n, *groups],
                     [add_head, add_url, counter, *groups])
         b_save.click(on_save, [folder, *groups], saved_file)
-        b_write.click(on_write, [folder, *groups], [script_md, detailed_md, notes, files])
+        b_write.click(_busy("⏳ Writing scripts… please wait"), None, b_write) \
+            .then(on_write, [folder, *groups], [script_md, detailed_md, notes, files, write_status, tabs],
+                  show_progress="hidden") \
+            .then(_ready(L_WRITE), None, b_write)
     return demo
 
 
-def main(port: int = 7860, share: bool = False):
-    build().launch(server_name="127.0.0.1", server_port=port, share=share, css=CSS,
-                   theme=gr.themes.Soft(), inbrowser=True)
+def main(port: int | None = None, host: str | None = None, share: bool = False):
+    """Local: http://127.0.0.1:7860. On Railway/Render: host 0.0.0.0 and the PORT they give."""
+    import os
+    port = port or int(os.getenv("PORT", 7860))
+    host = host or os.getenv("HOST") or ("0.0.0.0" if os.getenv("PORT") else "127.0.0.1")
+    user, pw = os.getenv("APP_USERNAME"), os.getenv("APP_PASSWORD")
+    auth = (user, pw) if user and pw else None
+    build().queue(default_concurrency_limit=1).launch(
+        server_name=host, server_port=port, share=share, css=CSS, theme=THEME,
+        auth=auth, auth_message=f"{config.SHOW_NAME} — News Studio" if auth else None,
+        inbrowser=host == "127.0.0.1")

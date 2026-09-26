@@ -5,7 +5,13 @@ Edit this file (not the code) to change sources, categories, topic quotas
 or the time window.
 """
 
+import os
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# Where daily folders are saved. On Railway point this at the mounted volume
+# (e.g. NEWSAGENT_OUTPUT_DIR=/app/output) so files survive redeploys.
+OUTPUT_DIR = Path(os.getenv("NEWSAGENT_OUTPUT_DIR", "output"))
 
 # ---------------------------------------------------------------------------
 # Time window — "today's news"

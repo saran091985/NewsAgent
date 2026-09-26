@@ -197,19 +197,32 @@ def run(folder: Path, stories: list[dict], progress=None) -> dict:
         if progress:
             progress(frac, desc=msg)
 
-    say(0.05, f"Reading {n} articles…")
+    say(0.02, f"Reading {n} articles…")
     with ThreadPoolExecutor(max_workers=6) as ex:
         texts = list(ex.map(source_text, stories))
     for s, t in zip(stories, texts):
         if len(t) < 200:
             log["thin_source"].append(s["headline"])
 
-    say(0.35, f"Writing {n} stories…")
+    say(0.2, f"Writing story 0 of {n}…")
     llm = _llm(StoryOut)
+    from concurrent.futures import as_completed
     from langchain_core.messages import HumanMessage, SystemMessage
     inputs = [[SystemMessage(content=SYSTEM), HumanMessage(content=_story_prompt(s, t, target))]
               for s, t in zip(stories, texts)]
-    results = llm.batch(inputs, config={"max_concurrency": 5}, return_exceptions=True)
+
+    def call(msgs):
+        try:
+            return llm.invoke(msgs)
+        except Exception as e:          # keep going; the story is marked as failed
+            return e
+
+    results: list = [None] * n
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futures = {ex.submit(call, m): i for i, m in enumerate(inputs)}
+        for done, fut in enumerate(as_completed(futures), 1):
+            results[futures[fut]] = fut.result()
+            say(0.2 + 0.6 * done / n, f"Writing story {done} of {n}…")
     failures = [r for r in results if isinstance(r, Exception)]
     if failures and len(failures) == len(results):
         # nothing was written (bad key, no credit, no internet) — stop with a clear message

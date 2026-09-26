@@ -43,7 +43,7 @@ def select(
     date: Optional[str] = typer.Option(None, help="Folder date YYYY-MM-DD (default: latest)"),
 ):
     """Pick the TOP most important stories from the collected candidates."""
-    folder = Path("output") / date if date else None
+    folder = config.OUTPUT_DIR / date if date else None
     _select(top, folder, no_ai)
 
 
@@ -68,10 +68,13 @@ def _select(top, folder, no_ai):
 
 
 @app.command()
-def ui(port: int = typer.Option(7860, help="Port for the web page")):
+def ui(
+    port: Optional[int] = typer.Option(None, help="Port (default: $PORT or 7860)"),
+    host: Optional[str] = typer.Option(None, help="Host (default: 127.0.0.1 locally, 0.0.0.0 on a server)"),
+):
     """Open the review screen (collect → pick → review → write) in your browser."""
     from . import ui as ui_module
-    ui_module.main(port=port)
+    ui_module.main(port=port, host=host)
 
 
 @app.command("check-feeds")

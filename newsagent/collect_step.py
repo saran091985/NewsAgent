@@ -20,7 +20,7 @@ from . import config, filter as news_filter
 from .collect import hindu, onthisday, rss
 from .models import NewsItem
 
-OUTPUT_ROOT = Path("output")
+OUTPUT_ROOT = config.OUTPUT_DIR
 
 
 def run_dir(day: datetime) -> Path:
