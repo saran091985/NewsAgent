@@ -12,6 +12,7 @@ Then one more call writes the intro, the topic openers, "Special today" and the 
 Output (same folder):
   news_detailed.md   — for you: detailed version + source link per story
   youtube_script.md  — for the host: read-aloud script with timings
+  youtube_script.txt — the same script as plain text for a teleprompter app (no * # > symbols)
   write_log.json     — tokens, cost, stories with thin source text, number checks
 """
 
@@ -289,13 +290,15 @@ Write for the 10-year-old host to read aloud, in the style above:
     detailed_md, script_md, words = _render(written, show)
     (folder / "news_detailed.md").write_text(detailed_md, encoding="utf-8")
     (folder / "youtube_script.md").write_text(script_md, encoding="utf-8")
+    teleprompter = render_teleprompter(written, show)
+    (folder / "youtube_script.txt").write_text(teleprompter, encoding="utf-8")
     log["script_words"] = words
     log["script_minutes"] = round(words / config.WORDS_PER_MINUTE, 1)
     log["cost_usd"] = round((log["input_tokens"] * PRICE_IN + log["output_tokens"] * PRICE_OUT) / 1e6, 4)
     log["run_at"] = datetime.now().isoformat(timespec="seconds")
     (folder / "write_log.json").write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     say(1.0, f"Done: {words} words ≈ {log['script_minutes']} min, cost ≈ ${log['cost_usd']}")
-    return {"detailed": detailed_md, "script": script_md, "log": log}
+    return {"detailed": detailed_md, "script": script_md, "teleprompter": teleprompter, "log": log}
 
 
 SECTION = {
@@ -355,3 +358,55 @@ def _render(written: list[dict], show: dict) -> tuple[str, str, int]:
     d = [f"# {config.SHOW_NAME} — detailed news", f"_{today} · {len(written)} stories_", ""] \
         + build("detailed_points", with_source=True)
     return "\n".join(d), "\n".join(sc), words
+
+
+# ---------------------------------------------------------------------------
+# Teleprompter version (plain text)
+# ---------------------------------------------------------------------------
+
+_EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002B00-\U00002BFF"
+    "\U0000FE0F\U0000200D\U000020E3]+")
+
+
+def _plain(text: str) -> str:
+    """Strip markdown symbols (and emojis unless kept) so the teleprompter shows clean words."""
+    text = re.sub(r"[*_`#>]+", "", text or "")
+    if not config.TELEPROMPTER_KEEP_EMOJIS:
+        text = _EMOJI.sub("", text)
+    text = text.replace("\u2014", " - ")                     # long dash reads oddly on some prompters
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def render_teleprompter(written: list[dict], show: dict) -> str:
+    """One block per story: title line, then short paragraphs, blank lines between — nothing to trip over."""
+    openers = {o["topic"]: o["line"] for o in show.get("topic_openers", [])}
+    names = {"World": "WORLD NEWS", "India": "INDIA NEWS", "UAE": "UAE NEWS", "Sports": "SPORTS NEWS",
+             "Space & Science": "SPACE AND SCIENCE NEWS", "Tech": "TECHNOLOGY NEWS",
+             "Weather & Nature": "WEATHER AND NATURE", "Business": "MONEY AND BUSINESS"}
+    out: list[str] = []
+    if show.get("intro"):
+        out += [_plain(show["intro"]), ""]
+    current = None
+    for k, w in enumerate(written, 1):
+        b = w["story"]["bucket"]
+        if b != current:
+            current = b
+            out += ["", names.get(b, b.upper()), ""]
+            if openers.get(b):
+                out += [_plain(openers[b]).strip('"'), ""]
+        out += [f"{k}. {_plain(w['title']).upper()}", ""]
+        if w.get("opener"):
+            out += [_plain(w["opener"]), ""]
+        for p in w.get("script_points", []):
+            label = _plain(p["label"]).rstrip(":")
+            out += [f"{label}: {_plain(p['text'])}", ""]
+        if w.get("explain_term") and w.get("explain_text"):
+            term = _plain(w["explain_term"]).rstrip("?")
+            out += [f"Wait, what's {term}? {_plain(w['explain_text'])}", ""]
+    if show.get("special_today"):
+        out += ["", "SPECIAL TODAY", "", _plain(show["special_today"]), ""]
+    if show.get("outro"):
+        out += ["", _plain(show["outro"])]
+    text = "\n".join(out).strip() + "\n"
+    return re.sub(r"\n{3,}", "\n\n", text)               # never more than one empty line

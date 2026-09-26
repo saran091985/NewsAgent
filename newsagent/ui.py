@@ -75,6 +75,7 @@ button:disabled {filter: grayscale(.4); opacity: .8; cursor: progress !important
           background: rgba(255,255,255,.92); box-shadow: 0 4px 14px rgba(0,0,0,.06);}
 .dark #counter {background: rgba(15,23,42,.92);}
 #write-status {min-height: 8px;}
+#teleprompter textarea {font-size: 1.15rem !important; line-height: 1.6 !important;}
 .pwrap {margin: 6px 0 4px;}
 .ptext {font-weight: 700; margin-bottom: 6px;}
 .pbar {height: 16px; border-radius: 999px; background: rgba(148,163,184,.25); overflow: hidden;}
@@ -332,14 +333,14 @@ def on_write(folder, *values):
     t = threading.Thread(target=work, daemon=True)
     t.start()
     while t.is_alive():
-        yield skip, skip, skip, skip, _bar(state["frac"], f"✍️ {state['desc']}"), skip
+        yield skip, skip, skip, skip, _bar(state["frac"], f"✍️ {state['desc']}"), skip, skip
         time.sleep(0.5)
 
     if state["err"] is not None:
         msg = f"{state['err']} Your list was saved to final.csv."
         gr.Warning(msg, duration=None, title="Writing failed")
         yield skip, skip, f"❌ **Writing failed:** {msg}", skip, \
-            _bar(1, f"❌ Writing failed — {msg}", "#ef4444"), skip
+            _bar(1, f"❌ Writing failed — {msg}", "#ef4444"), skip, skip
         return
     res = state["res"]
     log = res["log"]
@@ -352,10 +353,12 @@ def on_write(folder, *values):
     if log["thin_source"]:
         notes.append(f"ℹ️ {len(log['thin_source'])} stories had little article text (written from headline/summary) — double-check them.")
     f = Path(folder)
-    files = [str(f / "youtube_script.md"), str(f / "news_detailed.md"), str(f / "final.csv")]
+    files = [str(f / "youtube_script.txt"), str(f / "youtube_script.md"), str(f / "news_detailed.md"),
+             str(f / "final.csv")]
     done = _bar(1, f"✅ Done! {log['script_words']} words ≈ {log['script_minutes']} minutes — see the 🎬 YouTube script tab.",
                 "linear-gradient(90deg,#10b981,#14b8a6)")
-    yield res["script"], res["detailed"], "\n\n".join(notes), files, done, gr.Tabs(selected="script")
+    yield res["script"], res["detailed"], "\n\n".join(notes), files, done, gr.Tabs(selected="script"), \
+        res["teleprompter"]
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +366,7 @@ def on_write(folder, *values):
 # ---------------------------------------------------------------------------
 
 FILE_NOTES = {
+    "youtube_script.txt": "📺 teleprompter script (plain text)",
     "youtube_script.md": "🎬 YouTube script", "news_detailed.md": "📚 detailed version",
     "final.csv": "✅ your final list", "selected.csv": "✨ AI picks", "candidates.csv": "📥 all collected stories",
 }
@@ -409,13 +413,24 @@ def on_past_select(day):
         log = json.loads((f / "write_log.json").read_text(encoding="utf-8"))
         lines.append(f"\n{log.get('stories', '?')} stories · {log.get('script_words', '?')} words ≈ "
                      f"{log.get('script_minutes', '?')} min · cost ≈ ${log.get('cost_usd', '?')}")
-    files = [str(f / n) for n in names if n.endswith((".md", ".csv"))]
+    files = [str(f / n) for n in names if n.endswith((".md", ".csv", ".txt"))]
     return "\n".join(lines), script, detailed, files, _zip_day(day)
 
 
 # ---------------------------------------------------------------------------
 # layout
 # ---------------------------------------------------------------------------
+
+def _copy_button() -> dict:
+    """Copy button on a Textbox — the argument name differs between Gradio versions."""
+    import inspect
+    params = inspect.signature(gr.Textbox).parameters
+    if "buttons" in params:
+        return {"buttons": ["copy"]}
+    if "show_copy_button" in params:
+        return {"show_copy_button": True}
+    return {}
+
 
 def _busy(label: str):
     return lambda: gr.Button(value=label, interactive=False)
@@ -467,6 +482,11 @@ def build() -> gr.Blocks:
             with gr.Tab("🎬 YouTube script", id="script"):
                 notes = gr.Markdown()
                 script_md = gr.Markdown()
+            with gr.Tab("📺 Teleprompter", id="teleprompter"):
+                gr.Markdown("Plain text for your teleprompter app — no `*`, `#` or other symbols. "
+                            "Copy it with the button in the corner, or download **youtube_script.txt** from ⬇️ Downloads.")
+                teleprompter = gr.Textbox(show_label=False, lines=28, max_lines=60, interactive=False,
+                                          elem_id="teleprompter", **_copy_button())
             with gr.Tab("📚 Detailed version", id="detailed"):
                 detailed_md = gr.Markdown()
             with gr.Tab("⬇️ Downloads", id="downloads"):
@@ -505,7 +525,8 @@ def build() -> gr.Blocks:
                     [add_head, add_url, counter, *groups])
         b_save.click(on_save, [folder, *groups], saved_file)
         b_write.click(_busy("⏳ Writing scripts… please wait"), None, b_write) \
-            .then(on_write, [folder, *groups], [script_md, detailed_md, notes, files, write_status, tabs],
+            .then(on_write, [folder, *groups], [script_md, detailed_md, notes, files, write_status, tabs,
+                                                teleprompter],
                   show_progress="hidden") \
             .then(_ready(L_WRITE), None, b_write) \
             .then(on_past_refresh, past_day, past_day)
