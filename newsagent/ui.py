@@ -297,7 +297,7 @@ def on_save(folder, *values):
     ids = [i for v in values for i in (v or [])]   # topic order = show order
     stories = _save_final(folder, ids)
     gr.Info(f"Saved {len(stories)} stories to final.csv")
-    return str(Path(folder) / "final.csv")
+    return gr.File(value=str(Path(folder) / "final.csv"), visible=True)
 
 
 def _bar(frac: float, text: str, color: str = "linear-gradient(90deg,#f97316,#ec4899,#8b5cf6)") -> str:
@@ -462,7 +462,8 @@ def build() -> gr.Blocks:
                     b_save = gr.Button(L_SAVE, elem_id="btn-save", elem_classes="step-btn")
                     b_write = gr.Button(L_WRITE, elem_id="btn-write", elem_classes="step-btn")
                 write_status = gr.HTML(elem_id="write-status")   # live progress bar shows here
-                saved_file = gr.File(label="final.csv", visible=True)
+                # appears only after "Save list only" — a download link for your saved list
+                saved_file = gr.File(label="⬇️ Your saved list (final.csv)", visible=False, height=90)
             with gr.Tab("🎬 YouTube script", id="script"):
                 notes = gr.Markdown()
                 script_md = gr.Markdown()
