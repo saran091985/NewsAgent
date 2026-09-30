@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -453,11 +454,49 @@ FILE_NOTES = {
 }
 
 
+KEEP_ON_DELETE = {"feedback.json"}      # tiny; the AI pick learns from your last FEEDBACK_DAYS of choices
+
+
 def _run_dates() -> list[str]:
     root = config.OUTPUT_DIR
     if not root.exists():
         return []
-    return sorted((p.name for p in root.glob("20??-??-??") if p.is_dir()), reverse=True)
+    return sorted((p.name for p in root.glob("20??-??-??")
+                   if p.is_dir() and any(c.name not in KEEP_ON_DELETE for c in p.iterdir())), reverse=True)
+
+
+def _delete_day(day: str) -> int:
+    """Delete one day's files and folders (keeps feedback.json so the AI keeps learning your taste)."""
+    import shutil
+    f = config.OUTPUT_DIR / day
+    if not (f.is_dir() and re.fullmatch(r"20\d\d-\d\d-\d\d", day)):
+        return 0
+    n = 0
+    for c in f.iterdir():
+        if c.name in KEEP_ON_DELETE:
+            continue
+        if c.is_dir():
+            n += sum(1 for x in c.rglob("*") if x.is_file())
+            shutil.rmtree(c, ignore_errors=True)
+        else:
+            c.unlink(missing_ok=True)
+            n += 1
+    return n
+
+
+def on_delete(day, which, sure):
+    if not sure:
+        gr.Warning("Tick “Yes, delete” first — deleted files can't be brought back.")
+        return gr.skip(), gr.skip()
+    today = datetime.now(config.LOCAL_TZ).strftime("%Y-%m-%d")
+    days = [day] if which == "this" else [d for d in _run_dates() if d != today]
+    days = [d for d in days if d]
+    if not days:
+        gr.Info("Nothing to delete.")
+        return gr.skip(), False
+    files = sum(_delete_day(d) for d in days)
+    gr.Info(f"🗑️ Deleted {files} files from {len(days)} day(s): {', '.join(sorted(days))}.")
+    return on_past_refresh(None if which == "this" else day), False
 
 
 def _zip_day(day: str) -> str | None:
@@ -618,6 +657,13 @@ def build() -> gr.Blocks:
                     past_day = gr.Dropdown(choices=[], label="📅 Pick a day", scale=4)
                     b_past_refresh = gr.Button("🔄 Refresh list", scale=1)
                 past_info = gr.Markdown()
+                with gr.Accordion("🗑️ Clean up (free space)", open=False):
+                    gr.Markdown("Deletes the day's scripts, lists and pictures. Your pick feedback "
+                                "(a tiny feedback.json) is kept so the AI keeps learning what you like.")
+                    with gr.Row():
+                        del_sure = gr.Checkbox(False, label="Yes, delete (can't be undone)", scale=2)
+                        b_del_day = gr.Button("🗑️ Delete this day", variant="stop", scale=1)
+                        b_del_old = gr.Button("🧹 Delete all days except today", variant="stop", scale=1)
                 with gr.Row():
                     past_zip = gr.File(label="⬇️ Download the whole day (.zip)")
                     past_files = gr.Files(label="Or download single files")
@@ -640,6 +686,10 @@ def build() -> gr.Blocks:
         demo.load(on_past_refresh, None, past_day).then(on_past_select, past_day, past_out)
         b_past_refresh.click(on_past_refresh, past_day, past_day).then(on_past_select, past_day, past_out)
         past_day.input(on_past_select, past_day, past_out)
+        b_del_day.click(lambda d, s: on_delete(d, "this", s), [past_day, del_sure], [past_day, del_sure]) \
+            .then(on_past_select, past_day, past_out)
+        b_del_old.click(lambda d, s: on_delete(d, "old", s), [past_day, del_sure], [past_day, del_sure]) \
+            .then(on_past_select, past_day, past_out)
         b_collect.click(_busy("⏳ Collecting news…"), None, b_collect) \
             .then(on_collect, [hours, show_flagged, top_n], [folder, status, counter, *groups]) \
             .then(_ready(L_COLLECT), None, b_collect)
