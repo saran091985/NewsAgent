@@ -2,7 +2,8 @@
 Images for the stories — only runs when you click "Find images" on the 🖼️ Images tab.
 
 For each story:
-  1. one Google Images search (Serper, ~$0.001) for the headline
+  1. one image search for the headline — free DuckDuckGo first, Serper (~$0.001) only if that fails
+     (config.SEARCH_PROVIDER)
   2. pick the best 2-3 pictures for HALF of a 16:9 video frame (960×1080, portrait 8:9):
      big enough, close to that shape, from different websites, no watermarked stock sites
   3. download them and also save a ready-cropped 8:9 copy
@@ -80,7 +81,33 @@ def topics_from_file(path: str) -> list[dict]:
 # 1-2. Search and pick
 # ---------------------------------------------------------------------------
 
-def search_images(query: str, creative_commons: bool) -> list[dict]:
+def _free_images(query: str, creative_commons: bool) -> list[dict]:
+    """DuckDuckGo image search (free, no key) → same field names as Serper."""
+    from ddgs import DDGS
+    kw = {"max_results": 30, "safesearch": "moderate"}
+    if creative_commons:
+        kw["license_image"] = "any"               # any Creative Commons licence
+    rows = DDGS().images(query, **kw) or []
+    return [{"title": r.get("title", ""), "imageUrl": r.get("image", ""), "thumbnailUrl": r.get("thumbnail", ""),
+             "link": r.get("url", ""), "domain": urlparse(r.get("url", "")).netloc,
+             "imageWidth": r.get("width") or 0, "imageHeight": r.get("height") or 0} for r in rows]
+
+
+def search_images(query: str, creative_commons: bool) -> tuple[list[dict], str]:
+    """Returns (results, "free" or "serper")."""
+    mode = config.SEARCH_PROVIDER
+    if mode in ("free", "free_then_serper"):
+        try:
+            rows = _free_images(query, creative_commons)
+            if rows or mode == "free":
+                return rows, "free"
+        except Exception as e:
+            if mode == "free":
+                raise AIError(f"Free image search failed: {e}") from e
+    return _serper_images(query, creative_commons), "serper"
+
+
+def _serper_images(query: str, creative_commons: bool) -> list[dict]:
     key = os.getenv("SERPER_API_KEY")
     if not key:
         raise AIError("No SERPER_API_KEY found — add it to .env (or Railway Variables) to search images.")
@@ -254,18 +281,20 @@ def run(folder: Path, topics: list[dict], per_story: int = 3, creative_commons: 
         shutil.rmtree(img_dir, ignore_errors=True)
     img_dir.mkdir(parents=True, exist_ok=True)
     n = len(topics)
-    log = {"stories": n, "searches": 0, "errors": {}}
+    log = {"stories": n, "searches": 0, "free_searches": 0, "paid_searches": 0, "errors": {}}
 
     def gather(i_topic):
         i, t = i_topic
-        opts = pick_images(search_images(t["headline"], creative_commons), per_story)
+        rows, via = search_images(t["headline"], creative_commons)
+        log["free_searches" if via == "free" else "paid_searches"] += 1
+        opts = pick_images(rows, per_story)
         for j, o in enumerate(opts, 1):
             download(o, img_dir / f"{i:02d}_{j}")
         return i, [o for o in opts if o.get("file")]
 
     found: dict[int, list[dict]] = {}
     say(0.02, f"Searching pictures for story 0 of {n}…")
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=2) as ex:
         futs = [ex.submit(gather, (i, t)) for i, t in enumerate(topics, 1)]
         for done, f in enumerate(as_completed(futs), 1):
             try:
@@ -286,10 +315,11 @@ def run(folder: Path, topics: list[dict], per_story: int = 3, creative_commons: 
     say(0.97, "Saving…")
     save_results(folder, results)
     shutil.make_archive(str(folder / "images"), "zip", root_dir=img_dir)
-    log["cost_usd"] = round(log["searches"] * 0.001, 4)
+    log["cost_usd"] = round(log["paid_searches"] * 0.001, 4)
     log["run_at"] = datetime.now().isoformat(timespec="seconds")
     (folder / "images_log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
-    say(1.0, f"Done: {sum(len(r['options']) for r in results)} pictures for {n} stories")
+    cost = f"free" if not log["paid_searches"] else f"{log['paid_searches']} paid searches ≈ ${log['cost_usd']}"
+    say(1.0, f"Done: {sum(len(r['options']) for r in results)} pictures for {n} stories ({cost})")
     return {"results": results, "log": log}
 
 

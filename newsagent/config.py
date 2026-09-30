@@ -168,7 +168,13 @@ DETAILED_WORDS = (110, 170)       # detailed version, per story
 STYLE_GUIDE = "style/style_guide.md"   # tone rules + example stories the AI copies — edit freely
 TELEPROMPTER_KEEP_EMOJIS = False # youtube_script.txt: True keeps emojis, False removes them
 INCLUDE_SPECIAL_TODAY = True      # "Special today" segment (international days, famous firsts)
-SEARCH_THIN_STORIES = True        # 1 Serper news search for stories whose article can't be read (~$0.001 each)
+SEARCH_THIN_STORIES = True        # 1 news search for stories whose article can't be read
+
+# Where image searches and thin-story news searches go:
+#   "free_then_serper" — free DuckDuckGo first, Serper (~$0.001 each) only if DuckDuckGo fails (default)
+#   "free"             — DuckDuckGo only, never pays
+#   "serper"           — Serper only (Google results, the old behaviour)
+SEARCH_PROVIDER = "free_then_serper"
 SHOW_NAME = "The Learning Kids"   # used in the intro/outro — change to your channel's name
 HOST_NAME = ""                    # e.g. "Aarav"; leave empty to keep it generic
 

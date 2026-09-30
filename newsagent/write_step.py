@@ -62,9 +62,23 @@ def fetch_article_text(url: str, max_chars: int = 2500) -> str:
 
 
 def search_snippets(headline: str) -> str:
-    """Today's news snippets about this headline (Serper, ~1 search). Used only when the article is thin."""
+    """Today's news snippets about this headline. Used only when the article is thin.
+    Free DuckDuckGo news first; Serper (~$0.001) only if that fails (config.SEARCH_PROVIDER)."""
     import os
-    if not config.SEARCH_THIN_STORIES or not os.getenv("SERPER_API_KEY"):
+    if not config.SEARCH_THIN_STORIES:
+        return ""
+    mode = config.SEARCH_PROVIDER
+    if mode in ("free", "free_then_serper"):
+        try:
+            from ddgs import DDGS
+            rows = DDGS().news(headline, timelimit="d", max_results=6) or []
+            if rows or mode == "free":
+                return "\n".join(f"- {n.get('title', '')}: {n.get('body', '')} ({n.get('source', '')})"
+                                 for n in rows[:6])
+        except Exception:
+            if mode == "free":
+                return ""
+    if not os.getenv("SERPER_API_KEY"):
         return ""
     try:
         from langchain_community.utilities import GoogleSerperAPIWrapper

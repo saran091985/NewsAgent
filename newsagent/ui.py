@@ -576,7 +576,7 @@ def build() -> gr.Blocks:
                 files = gr.Files(label="Today's files")
             with gr.Tab("🖼️ Images", id="images"):
                 gr.Markdown("**🔍 Find images** gets 2-3 pictures per story that fit **half of a 16:9 video** "
-                            "(960×1080, 8:9) — about $0.001 per story, no AI. If a story's pictures aren't good "
+                            "(960×1080, 8:9) — free (DuckDuckGo; Serper only if that fails), no AI. If a story's pictures aren't good "
                             "enough, click **✨ Write Gemini prompts** under it: you get a prompt to *create* a "
                             "realistic picture and one to *enhance* each found picture in Gemini.")
                 with gr.Row():
