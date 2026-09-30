@@ -6,11 +6,11 @@ For each story:
   2. pick the best 2-3 pictures for HALF of a 16:9 video frame (960×1080, portrait 8:9):
      big enough, close to that shape, from different websites, no watermarked stock sites
   3. download them and also save a ready-cropped 8:9 copy
-  4. one gpt-4o-mini call writes two Gemini prompts per picture:
-       - create: make a NEW original picture like it (safe to use, no copyright worries)
-       - enhance: attach the found picture in Gemini and turn it into a high-resolution 8:9 version
+  4. ONLY when you click "Write Gemini prompts" for a story: one small gpt-4o-mini call writes
+       - create: a PHOTO-REALISTIC new picture of the story (no real faces, no text, nothing scary)
+       - enhance: one per found picture, to attach it in Gemini and make it high-resolution 8:9
 
-Output: output/<date>/images/ (pictures + *_half.jpg crops), image_prompts.md, images.zip
+Output: output/<date>/images/ (pictures + *_half.jpg crops), images.json, image_prompts.md, images.zip
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ from .ai_errors import AIError, friendly
 
 HALF_W, HALF_H = 960, 1080                    # half of a 1920×1080 frame
 TARGET_ASPECT = HALF_W / HALF_H               # 0.89 (a little taller than wide)
-PRICE_IN, PRICE_OUT = 0.15, 0.60
 
 # watermarked stock-photo sites — their previews are unusable
 STOCK_DOMAINS = ("shutterstock", "gettyimages", "istockphoto", "alamy", "dreamstime", "depositphotos",
@@ -172,51 +171,74 @@ def download(opt: dict, dest: Path) -> dict:
 # 4. Gemini prompts (AI)
 # ---------------------------------------------------------------------------
 
-class OptionPrompts(BaseModel):
-    option: int = Field(description="option number as given")
-    create_prompt: str = Field(description="Gemini prompt to create a NEW original image like this option")
-    enhance_prompt: str = Field(description="Gemini prompt to use with the attached found image")
+class Enhance(BaseModel):
+    option: int = Field(description="picture option number as given")
+    prompt: str = Field(description="Gemini prompt to use with that attached picture")
 
 
-class StoryPrompts(BaseModel):
-    prompts: list[OptionPrompts]
+class TopicPrompts(BaseModel):
+    create_prompt: str = Field(description="Gemini prompt for a NEW photo-realistic picture of the story")
+    enhance_prompts: list[Enhance] = Field(default_factory=list)
 
 
 PROMPT_SYSTEM = """You write image prompts for Google Gemini for a kids' YouTube news show (ages 8-14).
-The picture fills HALF of a 16:9 video frame: portrait 8:9, 1920×2160 pixels (or 960×1080), the host
-stands on the other half, so keep the main subject centred with some space around it.
+The picture fills HALF of a 16:9 video frame: portrait 8:9, 1920x2160 pixels; the host stands on the
+other half, so keep the main subject centred.
 
-create_prompt (60-100 words): a brand-new ORIGINAL picture showing the same scene or idea as the option.
-  Bright, friendly, detailed; say the style (photo-realistic or colourful 3D illustration), lighting,
-  composition and "8:9 portrait, 1920x2160, high resolution". Never show real, identifiable people,
-  logos, brand names or text in the picture — use symbols instead (flags, maps, objects, silhouettes).
-  Nothing scary or violent: for conflicts show calm symbols (ships on a sea route, a peace table, a map).
-enhance_prompt (40-80 words): the user attaches the found picture in Gemini. Ask Gemini to keep the
-  same subject and composition, make it a sharp high-resolution 1920x2160 8:9 portrait, extend the
-  background naturally if the shape needs it, improve lighting and colour, remove blur and noise.
-  Do not ask to remove watermarks or logos."""
+create_prompt (70-110 words): a PHOTO-REALISTIC news photograph of the story's scene — it must look like
+  a real photo taken by a press photographer, NOT a cartoon, 3D render or illustration.
+  Describe: the real place and setting, what is happening, time of day and natural light, camera and lens
+  (e.g. "shot on a full-frame DSLR, 35mm lens, f/4"), realistic textures and colours, depth of field,
+  "documentary news photography, ultra-detailed, 8:9 portrait, 1920x2160".
+  Rules: no identifiable real people — show people from behind, far away, as a crowd or as hands only;
+  no readable text, signs, captions, logos or brand names anywhere in the picture (they come out wrong);
+  nothing violent, bloody or frightening — for conflicts show calm, factual scenes (ships in a strait,
+  empty conference table with flags, trucks leaving a base at sunrise, a map on a desk).
+enhance_prompts (40-70 words each, one per found picture): the user attaches that picture in Gemini.
+  Ask Gemini to keep the same subject, scene and composition, keep it photo-realistic, turn it into a sharp
+  high-resolution 1920x2160 8:9 portrait, extend the background naturally if the shape needs it, and
+  improve lighting, colour and detail while removing blur and noise. Do not ask to remove watermarks or logos."""
 
 
 def _prompts_llm():
     from dotenv import load_dotenv
     from langchain_openai import ChatOpenAI
     load_dotenv(override=True)
-    return ChatOpenAI(model=config.WRITE_MODEL, temperature=0.6).with_structured_output(
-        StoryPrompts, include_raw=True, method="function_calling")
+    return ChatOpenAI(model=config.WRITE_MODEL, temperature=0.5).with_structured_output(
+        TopicPrompts, include_raw=True, method="function_calling")
 
 
-def _story_prompt(topic: dict, opts: list[dict]) -> str:
-    lines = [f"Option {i}: \"{o.get('title', '')}\" from {o.get('domain', '')} ({o.get('w')}×{o.get('h')})"
+def _topic_prompt(topic: dict, opts: list[dict]) -> str:
+    lines = [f"Picture {i}: \"{o.get('title', '')}\" from {o.get('domain', '')} ({o.get('w')}x{o.get('h')})"
              for i, o in enumerate(opts, 1)]
-    if not lines:
-        lines = ["Option 1: (no picture found — invent a fitting scene)"]
+    found = "\n".join(lines) if lines else "(no pictures found — only write create_prompt)"
     return (f"News story: {topic['headline']}\nTopic: {topic.get('bucket') or 'news'}\n\n"
-            "Pictures found for it:\n" + "\n".join(lines) +
-            "\n\nWrite create_prompt and enhance_prompt for EVERY option.")
+            f"Pictures found for it:\n{found}\n\n"
+            "Write one create_prompt and one enhance prompt for EVERY picture above.")
 
 
 # ---------------------------------------------------------------------------
-# Run
+# Saved results (images.json) — so prompts can be written later, per story
+# ---------------------------------------------------------------------------
+
+def load_results(folder: Path) -> list[dict]:
+    f = Path(folder) / "images.json"
+    if not f.exists():
+        return []
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+
+
+def save_results(folder: Path, results: list[dict]) -> None:
+    folder = Path(folder)
+    (folder / "images.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    (folder / "image_prompts.md").write_text(_render(results), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Run: search + download only (no AI). Prompts are written per story on request.
 # ---------------------------------------------------------------------------
 
 def run(folder: Path, topics: list[dict], per_story: int = 3, creative_commons: bool = False,
@@ -231,13 +253,11 @@ def run(folder: Path, topics: list[dict], per_story: int = 3, creative_commons: 
         shutil.rmtree(img_dir, ignore_errors=True)
     img_dir.mkdir(parents=True, exist_ok=True)
     n = len(topics)
-    log = {"stories": n, "searches": 0, "input_tokens": 0, "output_tokens": 0, "errors": {}}
+    log = {"stories": n, "searches": 0, "errors": {}}
 
-    # 1-3: search, pick, download — a few stories at a time
     def gather(i_topic):
         i, t = i_topic
-        results = search_images(t["headline"], creative_commons)
-        opts = pick_images(results, per_story)
+        opts = pick_images(search_images(t["headline"], creative_commons), per_story)
         for j, o in enumerate(opts, 1):
             download(o, img_dir / f"{i:02d}_{j}")
         return i, [o for o in opts if o.get("file")]
@@ -255,79 +275,75 @@ def run(folder: Path, topics: list[dict], per_story: int = 3, creative_commons: 
             except Exception as e:
                 log["errors"][f"search {done}"] = str(e)[:200]
             log["searches"] += 1
-            say(0.02 + 0.6 * done / n, f"Searching pictures for story {done} of {n}…")
+            say(0.02 + 0.93 * done / n, f"Searching pictures for story {done} of {n}…")
 
-    # 4: prompts
-    from langchain_core.messages import HumanMessage, SystemMessage
-    llm = _prompts_llm()
-
-    def write(i):
-        return llm.invoke([SystemMessage(content=PROMPT_SYSTEM),
-                           HumanMessage(content=_story_prompt(topics[i - 1], found.get(i, [])))])
-
-    prompts: dict[int, dict[int, dict]] = {}
-    say(0.65, "Writing Gemini prompts…")
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        futs = {ex.submit(write, i): i for i in range(1, n + 1)}
-        for done, f in enumerate(as_completed(futs), 1):
-            i = futs[f]
-            try:
-                res = f.result()
-            except Exception as e:
-                if done == n and not prompts:
-                    raise AIError(friendly(e)) from e
-                log["errors"][f"prompts {i}"] = str(e)[:200]
-                continue
-            u = getattr(res.get("raw"), "usage_metadata", None) or {}
-            log["input_tokens"] += u.get("input_tokens", 0)
-            log["output_tokens"] += u.get("output_tokens", 0)
-            if res.get("parsed"):
-                prompts[i] = {p.option: p.model_dump() for p in res["parsed"].prompts}
-            say(0.65 + 0.3 * done / n, f"Writing Gemini prompts {done} of {n}…")
-
+    keep = ("title", "imageUrl", "link", "domain", "w", "h", "fit", "file", "half", "half_size", "thumb_only")
+    results = [{"headline": t["headline"], "bucket": t.get("bucket", ""),
+                "options": [{k: o.get(k) for k in keep} for o in found.get(i, [])],
+                "prompts": None}
+               for i, t in enumerate(topics, 1)]
     say(0.97, "Saving…")
-    md = _render(topics, found, prompts)
-    (folder / "image_prompts.md").write_text(md, encoding="utf-8")
-    zip_path = shutil.make_archive(str(folder / "images"), "zip", root_dir=img_dir)
-    log["cost_usd"] = round((log["input_tokens"] * PRICE_IN + log["output_tokens"] * PRICE_OUT) / 1e6
-                            + log["searches"] * 0.001, 4)
+    save_results(folder, results)
+    shutil.make_archive(str(folder / "images"), "zip", root_dir=img_dir)
+    log["cost_usd"] = round(log["searches"] * 0.001, 4)
     log["run_at"] = datetime.now().isoformat(timespec="seconds")
     (folder / "images_log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
-
-    gallery = []
-    for i in sorted(found):
-        for j, o in enumerate(found[i], 1):
-            gallery.append((o.get("half") or o["file"], f"{i}.{j} · {topics[i - 1]['headline'][:60]} · "
-                                                        f"{o['w']}×{o['h']} · fit {int(o['fit'] * 100)}%"))
-    say(1.0, f"Done: {sum(len(v) for v in found.values())} pictures for {n} stories")
-    return {"markdown": md, "gallery": gallery, "zip": zip_path,
-            "prompts_file": str(folder / "image_prompts.md"), "log": log}
+    say(1.0, f"Done: {sum(len(r['options']) for r in results)} pictures for {n} stories")
+    return {"results": results, "log": log}
 
 
-def _render(topics: list[dict], found: dict[int, list[dict]], prompts: dict[int, dict[int, dict]]) -> str:
+def write_prompts(folder: Path, index: int) -> dict:
+    """One small AI call for ONE story (index starts at 0). Saved into images.json / image_prompts.md."""
+    results = load_results(folder)
+    if not 0 <= index < len(results):
+        raise AIError("That story is no longer in the list — search again.")
+    r = results[index]
+    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        res = _prompts_llm().invoke([SystemMessage(content=PROMPT_SYSTEM),
+                                     HumanMessage(content=_topic_prompt(r, r["options"]))])
+    except Exception as e:
+        raise AIError(friendly(e)) from e
+    if not res.get("parsed"):
+        raise AIError("The AI answer could not be read — click again.")
+    p = res["parsed"]
+    r["prompts"] = {"create": p.create_prompt, "enhance": {e.option: e.prompt for e in p.enhance_prompts}}
+    save_results(folder, results)
+    return r["prompts"]
+
+
+def prompts_md(r: dict) -> str:
+    """Markdown for one story's prompts (code blocks have copy buttons)."""
+    p = r.get("prompts")
+    if not p:
+        return ""
+    out = ["**✨ Create a new realistic picture** — paste into [Gemini](https://gemini.google.com/app)",
+           "```text", p["create"], "```"]
+    enh = p.get("enhance") or {}
+    for j, _ in enumerate(r["options"], 1):
+        text = enh.get(j) or enh.get(str(j))
+        if text:
+            out += [f"**🔧 Picture {j}: attach it in [Gemini](https://gemini.google.com/app) and use**",
+                    "```text", text, "```"]
+    return "\n".join(out)
+
+
+def options_md(r: dict) -> str:
+    lines = []
+    for j, o in enumerate(r["options"], 1):
+        note = " · small preview only" if o.get("thumb_only") else ""
+        lines.append(f"**{j}.** fit {int((o.get('fit') or 0) * 100)}% · {o.get('w')}×{o.get('h')} · "
+                     f"[{o.get('domain')}]({o.get('link') or o.get('imageUrl')}) · "
+                     f"[full picture]({o.get('imageUrl')}){note}")
+    return "  \n".join(lines) or "_No usable picture found — write a prompt to create one._"
+
+
+def _render(results: list[dict]) -> str:
     out = ["# 🖼️ Pictures and Gemini prompts",
-           f"_Half of a 16:9 frame = 960×1080 (8:9). `fit` shows how well a picture matches that "
-           f"shape and size. Found pictures belong to their websites — check the licence before using one, "
-           f"or use the **create** prompt to make your own._", ""]
-    for i, t in enumerate(topics, 1):
-        out += ["---", f"## {i}. {t['headline']}", ""]
-        opts = found.get(i, [])
-        ps = prompts.get(i, {})
-        if not opts:
-            out += ["_No usable picture found — use the create prompt below._", ""]
-            p = ps.get(1)
-            if p:
-                out += ["**✨ Create in Gemini**", "```text", p["create_prompt"], "```", ""]
-            continue
-        for j, o in enumerate(opts, 1):
-            note = " · only a small preview could be downloaded" if o.get("thumb_only") else ""
-            out += [f"### Option {j} — fit {int(o['fit'] * 100)}%",
-                    f"{o.get('title', '')}  ",
-                    f"{o['w']}×{o['h']} · [{o['domain']}]({o.get('link', '')}) · "
-                    f"[full picture]({o['imageUrl']}){note}  ",
-                    f"Files: `images/{Path(o['file']).name}` and cropped `images/{Path(o.get('half', '')).name}`", ""]
-            p = ps.get(j)
-            if p:
-                out += ["**✨ Create a new picture in Gemini**", "```text", p["create_prompt"], "```",
-                        "**🔧 Attach this picture in Gemini and use**", "```text", p["enhance_prompt"], "```", ""]
+           "_Half of a 16:9 frame = 960×1080 (8:9). Found pictures belong to their websites — check the "
+           "licence before using one, or create your own with the prompt._", ""]
+    for i, r in enumerate(results, 1):
+        out += ["---", f"## {i}. {r['headline']}", "", options_md(r), ""]
+        if r.get("prompts"):
+            out += [prompts_md(r), ""]
     return "\n".join(out)
