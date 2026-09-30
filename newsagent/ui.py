@@ -358,7 +358,8 @@ def on_write(folder, *values):
     if log["thin_source"]:
         notes.append(f"ℹ️ {len(log['thin_source'])} stories had little article text (written from headline/summary) — double-check them.")
     f = Path(folder)
-    files = [str(f / "youtube_script.txt"), str(f / "youtube_script.md"), str(f / "news_detailed.md"),
+    files = [str(f / "youtube_script.docx"), str(f / "youtube_script.rtf"), str(f / "youtube_script.txt"),
+             str(f / "youtube_script.md"), str(f / "news_detailed.md"),
              str(f / "final.csv")]
     done = _bar(1, f"✅ Done! {log['script_words']} words ≈ {log['script_minutes']} minutes — see the 🎬 YouTube script tab.",
                 "linear-gradient(90deg,#10b981,#14b8a6)")
@@ -445,6 +446,8 @@ def _prompt_writer(folder: str, index: int):
 # ---------------------------------------------------------------------------
 
 FILE_NOTES = {
+    "youtube_script.docx": "📺 teleprompter script (Word — keeps line breaks)",
+    "youtube_script.rtf": "📺 teleprompter script (Rich Text — keeps line breaks)",
     "youtube_script.txt": "📺 teleprompter script (plain text)",
     "image_prompts.md": "🖼️ pictures + Gemini prompts", "images.zip": "🖼️ all pictures",
     "youtube_script.md": "🎬 YouTube script", "news_detailed.md": "📚 detailed version",
@@ -493,7 +496,7 @@ def on_past_select(day):
         log = json.loads((f / "write_log.json").read_text(encoding="utf-8"))
         lines.append(f"\n{log.get('stories', '?')} stories · {log.get('script_words', '?')} words ≈ "
                      f"{log.get('script_minutes', '?')} min · cost ≈ ${log.get('cost_usd', '?')}")
-    files = [str(f / n) for n in names if n.endswith((".md", ".csv", ".txt", ".zip"))]
+    files = [str(f / n) for n in names if n.endswith((".md", ".csv", ".txt", ".docx", ".rtf", ".zip"))]
     return "\n".join(lines), script, detailed, files, _zip_day(day)
 
 
@@ -564,7 +567,9 @@ def build() -> gr.Blocks:
                 script_md = gr.Markdown()
             with gr.Tab("📺 Teleprompter", id="teleprompter"):
                 gr.Markdown("Plain text for your teleprompter app — no `*`, `#` or other symbols. "
-                            "Copy it with the button in the corner, or download **youtube_script.txt** from ⬇️ Downloads.")
+                            "Copy it with the button in the corner, or download it from ⬇️ Downloads. If your app joins "
+                            "all the lines together, import **youtube_script.docx** (or **.rtf**) instead of the .txt — "
+                            "those keep every line and paragraph break.")
                 teleprompter = gr.Textbox(show_label=False, lines=28, max_lines=60, interactive=False,
                                           elem_id="teleprompter", **_copy_button())
             with gr.Tab("📚 Detailed version", id="detailed"):
