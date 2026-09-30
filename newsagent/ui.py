@@ -19,7 +19,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from . import collect_step, config, select_step, write_step
+from . import collect_step, config, images_step, select_step, write_step
 from .ai_errors import AIError
 
 BUCKETS = list(config.BUCKET_TARGETS)
@@ -65,6 +65,7 @@ body, .gradio-container {background: linear-gradient(180deg, #fdf4ff 0%, #eff6ff
 #btn-pick {background: linear-gradient(90deg, #a855f7, #ec4899) !important;}
 #btn-write {background: linear-gradient(90deg, #f97316, #ef4444) !important;}
 #btn-save {background: linear-gradient(90deg, #10b981, #14b8a6) !important;}
+#btn-images {background: linear-gradient(90deg, #0ea5e9, #22c55e) !important;}
 #btn-add {background: linear-gradient(90deg, #64748b, #334155) !important;}
 button:disabled {filter: grayscale(.4); opacity: .8; cursor: progress !important;}
 
@@ -362,11 +363,64 @@ def on_write(folder, *values):
 
 
 # ---------------------------------------------------------------------------
+# images (only when you click the button)
+# ---------------------------------------------------------------------------
+
+def on_images(folder, source, upload, per_story, creative_commons):
+    import threading
+    import time
+    skip = gr.skip()
+    if source == "Upload a file":
+        if not upload:
+            raise gr.Error("Choose a file to upload first (final.csv, final.json, youtube_script.txt/.md or a .txt list).")
+        topics = images_step.topics_from_file(upload if isinstance(upload, str) else upload.name)
+        target = collect_step.run_dir(datetime.now(config.LOCAL_TZ))
+    else:
+        if not folder:
+            raise gr.Error("No news collected yet today — collect, pick and save a list first, or upload a file.")
+        target = Path(folder)
+        topics = images_step.topics_from_today(target)
+        if not topics:
+            raise gr.Error("Today's folder has no saved list yet — click 💾 Save list only or ✍️ Write scripts first.")
+    if not topics:
+        raise gr.Error("No topics found in that file.")
+
+    state = {"frac": 0.0, "desc": "Starting…", "res": None, "err": None}
+
+    def progress(frac, desc=""):
+        state["frac"], state["desc"] = frac, desc
+
+    def work():
+        try:
+            state["res"] = images_step.run(target, topics, per_story=int(per_story),
+                                           creative_commons=bool(creative_commons), progress=progress)
+        except Exception as e:
+            state["err"] = e
+
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    while t.is_alive():
+        yield _bar(state["frac"], f"🖼️ {state['desc']}"), skip, skip, skip
+        time.sleep(0.5)
+    if state["err"] is not None:
+        msg = str(state["err"])
+        gr.Warning(msg, duration=None, title="Finding images failed")
+        yield _bar(1, f"❌ {msg}", "#ef4444"), skip, skip, skip
+        return
+    res = state["res"]
+    log = res["log"]
+    done = _bar(1, f"✅ {len(res['gallery'])} pictures for {log['stories']} stories · cost ≈ ${log['cost_usd']}",
+                "linear-gradient(90deg,#10b981,#14b8a6)")
+    yield done, res["gallery"], [res["zip"], res["prompts_file"]], res["markdown"]
+
+
+# ---------------------------------------------------------------------------
 # past runs
 # ---------------------------------------------------------------------------
 
 FILE_NOTES = {
     "youtube_script.txt": "📺 teleprompter script (plain text)",
+    "image_prompts.md": "🖼️ pictures + Gemini prompts", "images.zip": "🖼️ all pictures",
     "youtube_script.md": "🎬 YouTube script", "news_detailed.md": "📚 detailed version",
     "final.csv": "✅ your final list", "selected.csv": "✨ AI picks", "candidates.csv": "📥 all collected stories",
 }
@@ -413,7 +467,7 @@ def on_past_select(day):
         log = json.loads((f / "write_log.json").read_text(encoding="utf-8"))
         lines.append(f"\n{log.get('stories', '?')} stories · {log.get('script_words', '?')} words ≈ "
                      f"{log.get('script_minutes', '?')} min · cost ≈ ${log.get('cost_usd', '?')}")
-    files = [str(f / n) for n in names if n.endswith((".md", ".csv", ".txt"))]
+    files = [str(f / n) for n in names if n.endswith((".md", ".csv", ".txt", ".zip"))]
     return "\n".join(lines), script, detailed, files, _zip_day(day)
 
 
@@ -491,6 +545,26 @@ def build() -> gr.Blocks:
                 detailed_md = gr.Markdown()
             with gr.Tab("⬇️ Downloads", id="downloads"):
                 files = gr.Files(label="Today's files")
+            with gr.Tab("🖼️ Images", id="images"):
+                gr.Markdown("Find 2-3 pictures per story that fit **half of a 16:9 video** (960×1080, 8:9), "
+                            "plus two **Gemini prompts** for each: one to *create* a new picture, one to "
+                            "*enhance* the found picture into high resolution. Runs only when you click the button "
+                            "(about $0.001 per story for the image search).")
+                with gr.Row():
+                    img_source = gr.Radio(["Today's final list", "Upload a file"], value="Today's final list",
+                                          label="Stories from", scale=2)
+                    img_upload = gr.File(label="Upload final.csv / final.json / youtube_script.txt / a .txt list",
+                                         file_types=[".csv", ".json", ".txt", ".md"], visible=False, scale=3)
+                with gr.Row():
+                    img_count = gr.Slider(2, 3, value=3, step=1, label="Pictures per story")
+                    img_cc = gr.Checkbox(False, label="Only Creative Commons pictures (free to reuse, fewer results)")
+                b_images = gr.Button("🔍 Find images & write Gemini prompts", elem_id="btn-images",
+                                     elem_classes="step-btn")
+                img_status = gr.HTML()
+                img_gallery = gr.Gallery(label="Options (already cropped to 8:9)", columns=5, height="auto",
+                                         object_fit="contain", show_label=True)
+                img_files = gr.Files(label="⬇️ images.zip (originals + 8:9 crops) and image_prompts.md")
+                img_md = gr.Markdown()
             with gr.Tab("📂 Past runs", id="past"):
                 with gr.Row():
                     past_day = gr.Dropdown(choices=[], label="📅 Pick a day", scale=4)
@@ -507,6 +581,12 @@ def build() -> gr.Blocks:
 
         # wiring — buttons are greyed out while they work, the progress bar shows under them
         demo.load(on_load, [show_flagged, top_n], [folder, status, counter, *groups])
+        img_source.change(lambda v: gr.File(visible=v == "Upload a file"), img_source, img_upload)
+        L_IMAGES = "🔍 Find images & write Gemini prompts"
+        b_images.click(_busy("⏳ Finding pictures… please wait"), None, b_images) \
+            .then(on_images, [folder, img_source, img_upload, img_count, img_cc],
+                  [img_status, img_gallery, img_files, img_md], show_progress="hidden") \
+            .then(_ready(L_IMAGES), None, b_images)
         past_out = [past_info, past_script, past_detailed, past_files, past_zip]
         demo.load(on_past_refresh, None, past_day).then(on_past_select, past_day, past_out)
         b_past_refresh.click(on_past_refresh, past_day, past_day).then(on_past_select, past_day, past_out)
