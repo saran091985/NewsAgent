@@ -70,6 +70,7 @@ def topics_from_file(path: str) -> list[dict]:
         return [{"headline": next(iter(r.values())), "bucket": ""} for r in rows]
     # scripts: numbered story titles ("1. The Big Squeeze" / "### 1. The Big Squeeze 🌊")
     numbered = re.findall(r"^\s*(?:#+\s*)?\d+[.)]\s+(.+?)\s*$", text, flags=re.M)
+    numbered = numbered or re.findall(r"★\s*\d+[.)]\s+(.+?)\s*★", text)   # teleprompter .txt with markers
     lines = numbered or [l.strip("-•* \t") for l in text.splitlines() if len(l.strip()) > 8]
     from .write_step import _EMOJI
     return [{"headline": _EMOJI.sub("", re.sub(r"[*_#`]", "", l)).strip(), "bucket": ""} for l in lines[:40]]

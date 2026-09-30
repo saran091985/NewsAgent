@@ -12,8 +12,8 @@ Then one more call writes the intro, the topic openers, "Special today" and the 
 Output (same folder):
   news_detailed.md   — for you: detailed version + source link per story
   youtube_script.md  — for the host: read-aloud script with timings
-  youtube_script.txt — the same script as plain text for a teleprompter app (no * # > symbols, Windows line breaks)
-  youtube_script.docx / .rtf — the same text as Word / Rich Text, for teleprompter apps that drop .txt line breaks
+  youtube_script.txt — the same script as plain text for a teleprompter app: no * # > symbols,
+                       ●●● between paragraphs and ★ TITLE ★ around titles (the app drops line breaks)
   write_log.json     — tokens, cost, stories with thin source text, number checks
 """
 
@@ -293,7 +293,7 @@ Write for the 10-year-old host to read aloud, in the style above:
     detailed_md, script_md, words = _render(written, show)
     (folder / "news_detailed.md").write_text(detailed_md, encoding="utf-8")
     (folder / "youtube_script.md").write_text(script_md, encoding="utf-8")
-    teleprompter = render_teleprompter(written, show)
+    teleprompter = to_markers(render_teleprompter(written, show))
     save_teleprompter(folder, teleprompter)
     log["script_words"] = words
     log["script_minutes"] = round(words / config.WORDS_PER_MINUTE, 1)
@@ -442,64 +442,24 @@ def render_teleprompter(written: list[dict], show: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Teleprompter files that keep their line breaks in every app
+# Teleprompter file: the app drops every line break, so mark breaks with visible symbols
 # ---------------------------------------------------------------------------
+
+PARA_MARK = "   ●●●   "      # between paragraphs
+TITLE_MARK = "★"             # around section and story titles
+
 
 def _is_title(line: str) -> bool:
     letters = [c for c in line if c.isalpha()]
     return bool(letters) and line == line.upper()
 
 
-def to_docx(text: str) -> bytes:
-    """Minimal Word file (no extra library): one paragraph per line, big font, titles in bold."""
-    import io
-    import zipfile
-    from xml.sax.saxutils import escape
-
-    paras = []
-    for line in text.split("\n"):
-        line = line.rstrip()
-        if not line:
-            paras.append("<w:p/>")
-            continue
-        bold = "<w:b/>" if _is_title(line) else ""
-        paras.append(f'<w:p><w:r><w:rPr>{bold}<w:sz w:val="36"/></w:rPr>'
-                     f'<w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>')
-    doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-           '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
-           + "".join(paras) + "</w:body></w:document>")
-    types = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-             '<Default Extension="xml" ContentType="application/xml"/>'
-             '<Override PartName="/word/document.xml" ContentType="application/'
-             'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
-    rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
-            'relationships/officeDocument" Target="word/document.xml"/></Relationships>')
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("[Content_Types].xml", types)
-        z.writestr("_rels/.rels", rels)
-        z.writestr("word/document.xml", doc)
-    return buf.getvalue()
-
-
-def to_rtf(text: str) -> str:
-    """Rich Text version: every line ends with a real paragraph mark (\\par)."""
-    def esc(s: str) -> str:
-        s = s.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
-        return "".join(c if ord(c) < 128 else f"\\u{ord(c) if ord(c) < 32768 else ord(c) - 65536}?" for c in s)
-    lines = []
-    for line in text.split("\n"):
-        line = line.rstrip()
-        lines.append((f"\\b {esc(line)}\\b0" if line and _is_title(line) else esc(line)) + "\\par")
-    return "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs36\n" + "\n".join(lines) + "\n}"
+def to_markers(text: str) -> str:
+    """One stream of text: ●●● between paragraphs, ★ TITLE ★ around titles — survives any import."""
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text.replace("\r\n", "\n")) if p.strip()]
+    paras = [" ".join(p.split()) for p in paras]
+    return PARA_MARK.join(f"{TITLE_MARK} {p} {TITLE_MARK}" if _is_title(p) else p for p in paras)
 
 
 def save_teleprompter(folder: Path, text: str) -> None:
-    """youtube_script.txt with Windows (CRLF) line breaks, plus .docx and .rtf copies."""
-    (folder / "youtube_script.txt").write_bytes(text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
-    (folder / "youtube_script.docx").write_bytes(to_docx(text))
-    (folder / "youtube_script.rtf").write_text(to_rtf(text), encoding="ascii")
+    (folder / "youtube_script.txt").write_text(text, encoding="utf-8")
