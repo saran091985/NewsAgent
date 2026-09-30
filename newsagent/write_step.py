@@ -102,7 +102,7 @@ class StoryOut(BaseModel):
     opener: str = Field(description="one lively lead-in sentence the host says before the points")
     script_points: list[Point] = Field(description="2-3 points for the YouTube script")
     detailed_points: list[Point] = Field(description="4-5 points for the detailed version: more facts, same style")
-    explain_term: str = Field(default="", description="the hardest word in the story, or empty")
+    explain_term: str = Field(default="", description="the hardest word that is USED in script_points, or empty")
     explain_text: str = Field(default="", description="1-2 sentence kid explanation with an everyday comparison")
 
 
@@ -145,7 +145,9 @@ Facts you may use (article text and other reports):
 
 - script_points: the YouTube version, about {script_words} words in total (opener + points + explainer).
 - detailed_points: the longer version, {lo}-{hi} words in total, more facts and background, same kid style.
-- Explain the one hardest word in explain_term / explain_text (skip if nothing is hard).
+- explain_term / explain_text: explain the one hardest word that you actually USED in the opener or
+  script_points (the YouTube version). Never explain a word that only appears in detailed_points.
+  If the YouTube version has no hard word, leave both empty.
 - Use ONLY facts from the text above. Never invent names, numbers, quotes or reasons.
   If the text is thin, keep the story short rather than guessing.
 - Do not mention today's date or days of the week."""
@@ -308,6 +310,32 @@ SECTION = {
 }
 
 
+_STOP_TERM = {"a", "an", "the", "of", "to", "in", "on", "and"}
+
+
+def term_used(term: str, text: str) -> bool:
+    """Is the explained word really in this version's text? ('Humid' matches 'humidity', 'Sovereignty' 'sovereign')."""
+    words = [w for w in re.findall(r"[a-z0-9]+", (term or "").lower()) if w not in _STOP_TERM]
+    if not words:
+        return False
+    low = (text or "").lower()
+    return all(re.search(r"\b" + re.escape(w[:max(4, min(len(w), 6))]), low) for w in words)
+
+
+def _explainer_fits(w: dict, points_key: str) -> bool:
+    """Show the 'Wait, what's…?' box only if its word appears in the text of THIS version."""
+    if not (w.get("explain_term") and w.get("explain_text")):
+        return False
+    body = " ".join([w.get("title", ""), w.get("opener", "")] + [p["text"] for p in w.get(points_key, [])]
+                    + [p["label"] for p in w.get(points_key, [])])
+    return term_used(w["explain_term"], body)
+
+
+def _tidy(text: str) -> str:
+    """Straight quotes/apostrophes — curly ones show as odd characters in some editors and teleprompters."""
+    return (text or "").translate(str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"'}))
+
+
 def _story_md(k: int, w: dict, points_key: str, with_source: bool) -> list[str]:
     s = w["story"]
     out = [f"### {k}. {w['title']} {w.get('emoji', '')}".rstrip()]
@@ -315,7 +343,7 @@ def _story_md(k: int, w: dict, points_key: str, with_source: bool) -> list[str]:
         out.append(w["opener"])
     out.append("")
     out += [f"- **{p['label'].rstrip(':')}:** {p['text']}" for p in w.get(points_key, [])]
-    if w.get("explain_term") and w.get("explain_text"):
+    if _explainer_fits(w, points_key):
         term = w["explain_term"].strip().rstrip("?")
         out += ["", f"> **Wait, what's {term}?** {w['explain_text']}"]
     if with_source:
@@ -357,7 +385,7 @@ def _render(written: list[dict], show: dict) -> tuple[str, str, int]:
           f"{words / config.WORDS_PER_MINUTE:.0f} minutes_", ""] + body_sc
     d = [f"# {config.SHOW_NAME} — detailed news", f"_{today} · {len(written)} stories_", ""] \
         + build("detailed_points", with_source=True)
-    return "\n".join(d), "\n".join(sc), words
+    return _tidy("\n".join(d)), _tidy("\n".join(sc)), words
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +399,7 @@ _EMOJI = re.compile(
 
 def _plain(text: str) -> str:
     """Strip markdown symbols (and emojis unless kept) so the teleprompter shows clean words."""
-    text = re.sub(r"[*_`#>]+", "", text or "")
+    text = re.sub(r"[*_`#>]+", "", _tidy(text))
     if not config.TELEPROMPTER_KEEP_EMOJIS:
         text = _EMOJI.sub("", text)
     text = text.replace("\u2014", " - ")                     # long dash reads oddly on some prompters
@@ -401,7 +429,7 @@ def render_teleprompter(written: list[dict], show: dict) -> str:
         for p in w.get("script_points", []):
             label = _plain(p["label"]).rstrip(":")
             out += [f"{label}: {_plain(p['text'])}", ""]
-        if w.get("explain_term") and w.get("explain_text"):
+        if _explainer_fits(w, "script_points"):
             term = _plain(w["explain_term"]).rstrip("?")
             out += [f"Wait, what's {term}? {_plain(w['explain_text'])}", ""]
     if show.get("special_today"):
